@@ -42,12 +42,12 @@ export function WriteModal(props) {
             React.useEffect(function () {
                 var node = modalRef.current;
                 if (!node) return;
-                var first = node.querySelector('input,textarea,button:not(:disabled)');
+                var first = node.querySelector('input:not(:disabled),textarea:not(:disabled),select:not(:disabled),button:not(:disabled)');
                 (first || node).focus();
             }, [write.phase]);
             function trapFocus(event) {
                 if (event.key !== 'Tab' || !modalRef.current) return;
-                var nodes = Array.from(modalRef.current.querySelectorAll('button:not(:disabled),input:not(:disabled),textarea:not(:disabled)'));
+                var nodes = Array.from(modalRef.current.querySelectorAll('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled)'));
                 if (!nodes.length) { event.preventDefault(); return; }
                 var first = nodes[0], last = nodes[nodes.length - 1];
                 if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
@@ -124,7 +124,13 @@ export function WriteModal(props) {
 				)
 			);
 			}
-                    body.push(h("p", { className: "cid-modal-note", key: "note" }, "确认后指派给 " + text(write.seatName) + "。指派只更新任务看板；如需立即处理，请另发消息通知成员。"));
+      body.push(h("label", { className: "cid-execute-option", key: "execute" },
+        h("input", { type: "checkbox", "data-cyber-field": "assign-execute-now", checked: write.executeNow === true, disabled: write.executeAllowed === false,
+          onChange: event => props.onPatch({ executeNow: event.target.checked, fieldError: "" }) }),
+        h("span", null, "指派后立即执行")));
+      body.push(h("p", { className: "cid-modal-note", key: "note" }, write.executeAllowed === false
+        ? "该成员不能接收团队执行指令。可以先指派，再在原生会话中安排执行。"
+        : write.executeNow ? "指派成功后自动发送执行指令；若成员正在工作，会收到追加指令。实际进度以成员状态和回复为准。" : "仅指派任务。之后也可在任务看板点击“立即执行”。"));
 		} else if (kind === "interrupt") {
 			subtitle = "目标 " + text(write.seatName) + " · 不可撤销";
 			body.push(
@@ -147,19 +153,27 @@ export function WriteModal(props) {
 					writeRow("任务", text(write.taskId)),
 					writeRow("标题", text(write.taskSubject) || "—"),
 					writeRow("版本", "rev " + String(write.taskRevision || 0)),
-					writeRow("动作", kind === "reopen" ? "task.reopen" : "task.complete")
+					writeRow("动作", { reopen: "重开为待办", complete: "标记完成", delete: "删除任务", start: "通知当前负责人立即执行" }[kind])
 				)
 			);
-			body.push(h("p", { className: "cid-modal-warn", key: "warn" }, kind === "reopen" ? "重开会恢复为待办，并取消原负责人。需要继续执行时，请重新派活。" : "只将这项任务标记完成，不会打断成员当前回合。"));
+      const taskWarning = { reopen: "重开会恢复为待办，并取消原负责人。需要继续执行时，请重新派活。", complete: "只将这项任务标记完成，不会打断成员当前回合。",
+        delete: "确认后从任务看板移除，插件不提供恢复入口。有其他任务依赖它时不能删除。删除不会打断成员当前回合，如需停止工作请另行打断。",
+        start: "向当前负责人发送立即执行指令。若成员正在工作，会收到追加指令，不会强制打断；实际进度以成员状态和回复为准。" };
+      body.push(h("p", { className: "cid-modal-warn", key: "warn" }, taskWarning[kind]));
 		}
 		if (fieldError) body.push(h("p", { className: "cid-write-error", role: "alert", key: "field-error", "data-cyber-field-error": "1" }, fieldError));
 	} else if (phase === "running") {
 		subtitle = "提交中 · 不会自动重试";
-		body.push(h("p", { className: "cid-modal-note", key: "running" }, kind === "assign" ? "正在创建任务并指派…" : "正在提交到 " + COMMAND_PATH + "…"));
+		body.push(h("p", { className: "cid-modal-note", key: "running" }, kind === "assign" ? (write.executeNow ? "正在指派任务并发送执行指令…" : "正在指派任务…") : "正在提交到 " + COMMAND_PATH + "…"));
 		body.push(h("p", { className: "cid-modal-note", key: "no-retry" }, "不会自动重试；结果返回后请按提示处理。"));
 	} else if (phase === "done") {
-		subtitle = "已提交 · 已刷新快照";
+		subtitle = "已提交 · 正在同步最新状态";
 		body.push(h("p", { className: "cid-write-status", "data-tone": "ok", role: "status", key: "done" }, text(write.doneMessage) || "操作成功。"));
+  } else if (phase === "assigned") {
+    title = write.error && write.error.deliveryUnknown ? "已指派，执行指令结果待确认" : "已指派，执行指令未送达";
+    subtitle = "保留指派结果 · 不会重复创建或自动重发";
+    body.push(h("p", { className: "cid-modal-warn", key: "assigned" }, write.doneMessage));
+    if (write.error) body.push(writeErrorCard(write.error));
 	} else if (phase === "unowned") {
 		title = write.error && write.error.deliveryUnknown ? "任务已创建，指派结果待确认" : "任务保留在看板，指派未完成";
 		subtitle = "先刷新核对，再通过派活选择现有任务";
@@ -196,11 +210,11 @@ export function WriteModal(props) {
 					key: "confirm",
 					type: "button",
 					className: "cid-modal-btn",
-					"data-tone": kind === "interrupt" || kind === "complete" ? "danger" : "primary",
+					"data-tone": ["interrupt", "complete", "delete"].includes(kind) ? "danger" : "primary",
 					"data-cyber-confirm": "1",
 					onClick: props.onConfirm,
 				},
-				kind === "assign" && write.taskId ? "确认指派" : WRITE_CONFIRM_LABEL[kind] || "确认"
+				kind === "assign" ? (write.executeNow ? "确认指派并立即执行" : write.taskId ? "确认指派" : WRITE_CONFIRM_LABEL.assign) : WRITE_CONFIRM_LABEL[kind] || "确认"
 			)
 		);
 	} else if (phase !== "running") {

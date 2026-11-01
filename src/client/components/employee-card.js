@@ -9,7 +9,6 @@ export function DetailPane(props) {
   const {seat,floor,write,last,gate,canWrite,floorId,taskRef,actionRef,actionKind,taskReady,taskCompleted,blockedReason,selfTarget,memberReady,messageAllowed,interruptAllowed,assignAllowed,taskAllowed,openMessage,openInterrupt,openComplete,openReopen,openAssign,patchWrite,closeWrite,refreshAndClose,onBackdrop,runWrite} = useOfficeCommands(props);
   if (!seat) return h("aside", {className:"cid-detail","aria-label":"员工介绍"},h("div",{className:"cid-empty"},"选择一位成员查看介绍、状态与任务。"));
   var facts = [
-		h(Fact, { key: "session", label: "会话", value: h("code", { className: "cid-code" }, seat.id) }),
 		seat.model ? h(Fact, { key: "model", label: "模型", value: (seat.provider ? seat.provider + " / " : "") + seat.model }) : null,
 		seat.tool
 			? h(Fact, {
@@ -45,7 +44,7 @@ export function DetailPane(props) {
 				})
 			: null,
 		seat.error ? h(Fact, { key: "error", label: "错误", value: h("span", { className: "cid-error" }, seat.error) }) : null,
-		seat.since ? h(Fact, { key: "since", label: "状态开始", value: formatClock(seat.since) }) : null,
+		seat.since ? h(Fact, { key: "since", label: "打卡时间：", value: formatClock(seat.since) }) : null,
 		seat.updatedAt ? h(Fact, { key: "updated", label: "最后更新", value: formatClock(seat.updatedAt) }) : null,
 	];
 

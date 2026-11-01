@@ -1,6 +1,6 @@
 {
   "name": "dsh-cyber-dept",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Cyber IT Department — a pixel-office view of DSH Agent Teams with snapshot + command routes.",
   "license": "MIT",

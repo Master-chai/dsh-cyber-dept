@@ -39,10 +39,10 @@ __export(index_exports, {
 module.exports = __toCommonJS(index_exports);
 
 // src/client/host/plugin.js
-var import_react10 = __toESM(require("react"), 1);
+var import_react11 = __toESM(require("react"), 1);
 
 // src/client/components/page.js
-var import_react9 = __toESM(require("react"), 1);
+var import_react10 = __toESM(require("react"), 1);
 
 // src/client/office-theme.js
 function resolveOfficeScheme(snapshot) {
@@ -165,6 +165,8 @@ var COMMAND_ACTION = Object.freeze({
   taskAssign: "task.assign",
   taskComplete: "task.complete",
   taskReopen: "task.reopen",
+  taskDelete: "task.delete",
+  taskStart: "task.start",
   messageSend: "message.send",
   agentInterrupt: "agent.interrupt"
 });
@@ -173,6 +175,8 @@ var ACTION_SPEC = Object.freeze({
   "task.assign": Object.freeze({ required: Object.freeze(["taskId", "expectedRevision", "owner"]), optional: Object.freeze([]) }),
   "task.complete": Object.freeze({ required: Object.freeze(["taskId", "expectedRevision"]), optional: Object.freeze([]) }),
   "task.reopen": Object.freeze({ required: Object.freeze(["taskId", "expectedRevision"]), optional: Object.freeze([]) }),
+  "task.delete": Object.freeze({ required: Object.freeze(["taskId", "expectedRevision"]), optional: Object.freeze([]) }),
+  "task.start": Object.freeze({ required: Object.freeze(["taskId", "expectedRevision"]), optional: Object.freeze([]) }),
   "message.send": Object.freeze({ required: Object.freeze(["target", "text"]), optional: Object.freeze([]) }),
   "agent.interrupt": Object.freeze({ required: Object.freeze(["target"]), optional: Object.freeze([]) })
 });
@@ -189,6 +193,7 @@ var OFFICE_ERROR = Object.freeze({
   taskNotFound: "office/task-not-found",
   taskDeleted: "office/task-deleted",
   taskBlocked: "office/task-blocked",
+  taskHasDependents: "office/task-has-dependents",
   taskLimit: "office/task-limit",
   invalidTransition: "office/invalid-transition",
   unauthorized: "office/unauthorized",
@@ -213,7 +218,7 @@ var TEAM_ERROR_TO_OFFICE = Object.freeze({
   TEAM_TASK_INVALID_TRANSITION: "office/invalid-transition",
   TEAM_TASK_UNAUTHORIZED: "office/unauthorized",
   TEAM_TASK_LIMIT: "office/task-limit",
-  TEAM_TASK_HAS_DEPENDENTS: "office/invalid-transition",
+  TEAM_TASK_HAS_DEPENDENTS: "office/task-has-dependents",
   TEAM_TASK_DEPENDENCY_CYCLE: "office/invalid-argument",
   TEAM_INVALID_ARGUMENT: "office/invalid-argument",
   TEAM_INVALID_WRITE_SCOPE: "office/invalid-write-scope",
@@ -1289,119 +1294,18 @@ function officeHoverSummary(member) {
 }
 
 // src/client/task-board.js
+var import_react3 = __toESM(require("react"), 1);
+
+// src/client/commands/use-task-commands.js
 var import_react2 = __toESM(require("react"), 1);
-var h = import_react2.default.createElement;
-function taskOwnerSeat(task, seats) {
-  if (task.ownerId) return seats.find(function(seat) {
-    return seat.id === task.ownerId;
-  }) || null;
-  return task.ownerName ? seats.find(function(seat) {
-    return seat.name === task.ownerName;
-  }) || null : null;
-}
-function TaskBoard(props) {
-  var filterState = import_react2.default.useState("all"), searchState = import_react2.default.useState(""), expandedState = import_react2.default.useState(null);
-  var limitState = import_react2.default.useState({ key: "", count: 50 });
-  var view = props.view ? props.view.value : { filter: filterState[0], search: searchState[0], expandedTaskId: expandedState[0] };
-  function change(patch) {
-    if (props.view) {
-      props.view.change(patch);
-      return;
-    }
-    if (patch.filter !== void 0) filterState[1](patch.filter);
-    if (patch.search !== void 0) searchState[1](patch.search);
-    if (patch.expandedTaskId !== void 0) expandedState[1](patch.expandedTaskId);
-  }
-  var floor = props.floor, tasks = (floor.tasks || []).filter(function(t) {
-    return t.status !== "deleted";
-  });
-  var filter = view.filter, query = view.search.trim().toLocaleLowerCase();
-  var shown = tasks.filter(function(task) {
-    var matches = filter === "all" || (filter === "blocked" ? isTaskBlocked(task) : task.status === filter);
-    return matches && (!query || (task.subject + " " + task.ownerName + " " + task.id).toLocaleLowerCase().includes(query));
-  });
-  var rank = { in_progress: 0, pending: 1, completed: 2 };
-  shown.sort(function(a, b) {
-    return rank[a.status] - rank[b.status];
-  });
-  var completed = tasks.filter(function(t) {
-    return t.status === "completed";
-  }).length;
-  var page = props.view ? props.view.value.taskPage || { key: "", count: 50 } : limitState[0];
-  var listKey = filter + "\n" + query, limit = page.key === listKey ? page.count : 50;
-  var tabs = [["all", "全部"], ["in_progress", "进行中"], ["pending", "待办"], ["blocked", "受阻"], ["completed", "已完成"]];
-  return h(
-    "section",
-    { className: "cid-task-board", "aria-label": "任务看板" },
-    h(
-      "div",
-      { className: "cid-board-controls" },
-      h(
-        "div",
-        { className: "cid-task-filter-row" },
-        h("div", { className: "cid-task-tabs", "aria-label": "筛选任务" }, tabs.map(function(tab) {
-          var count = tasks.filter(function(t) {
-            return tab[0] === "all" || (tab[0] === "blocked" ? isTaskBlocked(t) : t.status === tab[0]);
-          }).length;
-          return h("button", { key: tab[0], type: "button", "aria-pressed": filter === tab[0], onClick: function() {
-            change({ filter: tab[0] });
-          } }, tab[1], h("span", null, count));
-        })),
-        h("button", { type: "button", className: "cid-task-progress", "aria-pressed": filter === "completed", title: filter === "completed" ? "显示全部任务" : "只看已完成任务", onClick: function() {
-          change({ filter: filter === "completed" ? "all" : "completed" });
-        } }, h("span", null, completed + " / " + tasks.length + " 已完成"), h("progress", { value: completed, max: tasks.length || 1, "aria-label": "已完成任务" }))
-      ),
-      h("input", { type: "search", value: view.search, placeholder: "搜索任务或负责人", "aria-label": "搜索任务或负责人", onChange: function(e) {
-        change({ search: e.target.value });
-      } })
-    ),
-    shown.length ? h("ul", { className: "cid-task-list" }, shown.slice(0, limit).map(function(task) {
-      var owner = taskOwnerSeat(task, floor.seats || []), blocked = isTaskBlocked(task), expanded = view.expandedTaskId === task.id;
-      return h(
-        "li",
-        { key: task.id, "data-task-id": task.id, "data-selected": props.selectedTaskId === task.id ? "1" : "0", "data-recent": props.recent && props.recent.has("task:" + task.id) ? "1" : "0" },
-        h(
-          "button",
-          { type: "button", className: "cid-task-row", "aria-expanded": expanded, onClick: function() {
-            change({ expandedTaskId: expanded ? null : task.id });
-            if (props.onSelectTask) props.onSelectTask(task);
-          } },
-          h("span", { className: "cid-task-mark", "data-status": task.status, "data-blocked": blocked ? "1" : "0" }, task.status === "completed" ? "✓" : blocked ? "!" : task.status === "in_progress" ? "›" : "·"),
-          h("span", { className: "cid-task-copy" }, h("strong", null, task.subject), h("small", null, task.id + (blocked ? " · 等待依赖完成" : ""))),
-          h("span", { className: "cid-task-owner" }, owner ? owner.name : task.ownerName || "未指派"),
-          h("span", { className: "cid-task-state", "data-status": blocked ? "blocked" : task.status }, blocked ? "受阻" : taskStatusLabel(task.status)),
-          h("span", { className: "cid-task-chevron" }, expanded ? "−" : "+")
-        ),
-        expanded ? h(
-          "div",
-          { className: "cid-task-expanded" },
-          h("p", null, task.description || "暂无任务说明。"),
-          task.blockedBy && task.blockedBy.length ? h("div", null, h("b", null, "前置任务"), h("ul", null, task.blockedBy.map(function(id) {
-            var dependency = tasks.find(function(t) {
-              return t.id === id;
-            });
-            return h("li", { key: id }, (dependency ? dependency.subject : id) + " · " + (dependency ? taskStatusLabel(dependency.status) : "未找到"));
-          }))) : null,
-          task.writeScopes && task.writeScopes.length ? h("p", null, "工作范围：" + task.writeScopes.join("、")) : null,
-          task.writeScopeWarnings && task.writeScopeWarnings.length ? h("p", { className: "cid-office-warning" }, task.writeScopeWarnings.join("；")) : null,
-          h("p", { className: "cid-muted" }, owner ? "已联动负责人详情，可查看或操作这项任务。" : "此任务尚未关联到可用成员。")
-        ) : null
-      );
-    })) : h("div", { className: "cid-board-empty" }, floor.tasksAvailable === false ? "任务明细尚未同步，请稍后刷新。" : tasks.length ? "没有符合条件的任务" : "该部门尚未创建任务。选择成员后可使用“派活”。"),
-    shown.length > limit ? h("button", { type: "button", className: "cid-btn", onClick: function() {
-      if (props.view) props.view.change({ taskPage: { key: listKey, count: limit + 50 } });
-      else limitState[1]({ key: listKey, count: limit + 50 });
-    } }, "显示更多（剩余 " + (shown.length - limit) + " 项）") : null
-  );
-}
 
 // src/client/commands/protocol.js
 var COMMAND_PATH = COMMAND_ROUTE;
 var COMMAND_METHOD2 = COMMAND_METHOD;
 var WRITE_ACTION = COMMAND_ACTION;
 var WRITE_LIMIT = { message: MAX_MESSAGE_LENGTH, subject: MAX_SUBJECT_LENGTH, description: MAX_DESCRIPTION_LENGTH };
-var WRITE_TITLE = { message: "发送消息", interrupt: "打断 Agent", complete: "完成任务", reopen: "重开任务", assign: "派活" };
-var WRITE_CONFIRM_LABEL = { message: "确认发送", interrupt: "确认打断", complete: "确认完成", reopen: "确认重开", assign: "确认创建并指派" };
+var WRITE_TITLE = { message: "发送消息", interrupt: "打断 Agent", complete: "完成任务", reopen: "重开任务", assign: "派活", delete: "删除任务", start: "立即执行任务" };
+var WRITE_CONFIRM_LABEL = { message: "确认发送", interrupt: "确认打断", complete: "确认完成", reopen: "确认重开", assign: "确认创建并指派", delete: "确认删除", start: "确认立即执行" };
 function nextCommandId() {
   try {
     if (typeof crypto !== "undefined" && crypto && typeof crypto.randomUUID === "function") return crypto.randomUUID();
@@ -1487,6 +1391,7 @@ async function postOfficeCommand(sessionId, action, args, options) {
   return body.result;
 }
 var WRITE_ERROR_COPY = {
+  "office/task-has-dependents": { title: "其他任务仍依赖此任务", hint: "请先在 DSH 处理这些依赖，或先删除依赖它的任务，再重试删除。" },
   "office/stale-revision": { title: "任务版本已过期", hint: "快照里的 task revision 落后于任务板，宿主已拒绝这次写入。先刷新快照，等拿到最新 revision 再操作。" },
   "office/busy": { title: "同一命令正在处理", hint: "宿主检测到重复提交（同一 commandId 仍在执行）。不会自动重发；等它结束后刷新快照再试。" },
   "office/session-not-live": { title: "会话不在线", hint: "宿主拿不到 Lead 的实时 Agent，写动作已停止。回到会话确认它仍然打开。" },
@@ -1548,6 +1453,8 @@ function describeWriteSuccess(kind, value, seatName) {
   if (kind === "complete") return "任务已标记完成" + (taskLabel ? "：" + taskLabel : "") + (task && task.revision ? "（rev " + String(task.revision) + "）" : "");
   if (kind === "reopen") return "任务已重开为待办（原负责人已取消）" + (taskLabel ? "：" + taskLabel : "") + (task && task.revision ? "（rev " + String(task.revision) + "）" : "");
   if (kind === "assign") return "已派活给 " + target + (taskLabel ? "：" + taskLabel : "");
+  if (kind === "delete") return "任务已删除" + (taskLabel ? "：" + taskLabel : "") + "。删除不会打断成员当前回合。";
+  if (kind === "start") return "已向 " + target + " 发送立即执行指令" + (taskLabel ? "：" + taskLabel : "") + "。实际进度以成员状态和回复为准。";
   return "操作成功";
 }
 function taskRefOf(seat) {
@@ -1592,7 +1499,7 @@ function validateWrite(write) {
     if (description.length > WRITE_LIMIT.description) return "任务描述超过 " + String(WRITE_LIMIT.description) + " 字符。";
     return "";
   }
-  if (write.kind === "complete" || write.kind === "reopen") {
+  if (["complete", "reopen", "delete", "start"].includes(write.kind)) {
     if (!write.taskId) return "缺少 task id，无法定位任务。";
     if (!write.taskRevision) return "缺少 expectedRevision：先刷新快照拿到任务版本。";
     return "";
@@ -1604,12 +1511,14 @@ function actionOfWrite(write) {
   if (write.kind === "interrupt") return WRITE_ACTION.agentInterrupt;
   if (write.kind === "complete") return WRITE_ACTION.taskComplete;
   if (write.kind === "reopen") return WRITE_ACTION.taskReopen;
+  if (write.kind === "delete") return WRITE_ACTION.taskDelete;
+  if (write.kind === "start") return WRITE_ACTION.taskStart;
   return "";
 }
 function argsOfWrite(write) {
   if (write.kind === "message") return { target: write.seatName, text: write.text.trim() };
   if (write.kind === "interrupt") return { target: write.seatName };
-  if (write.kind === "complete" || write.kind === "reopen") return { taskId: write.taskId, expectedRevision: write.taskRevision };
+  if (["complete", "reopen", "delete", "start"].includes(write.kind)) return { taskId: write.taskId, expectedRevision: write.taskRevision };
   return {};
 }
 function writeGateOf(source, snapshot, floor) {
@@ -1624,11 +1533,321 @@ function writeGateOf(source, snapshot, floor) {
   return { enabled: true, reason: "" };
 }
 
+// src/client/commands/controller.js
+async function executeCommandIntent(current, post = postOfficeCommand) {
+  try {
+    if (current.kind === "assign") return await executeAssignment(current, post);
+    const result = await post(current.floorId, actionOfWrite(current), argsOfWrite(current));
+    if (!result || result.ok !== true) return { phase: "error", error: describeWriteError(result?.error), refreshNeeded: true };
+    const value = isObject(result.value) ? result.value : {};
+    return { phase: "done", value, task: value.task || null, doneMessage: describeWriteSuccess(current.kind, value, current.seatName), refreshNeeded: true };
+  } catch (error) {
+    return { phase: "error", error: describeWriteError(error), refreshNeeded: true };
+  }
+}
+async function executeAssignment(current, post) {
+  let task = current.taskId ? { id: current.taskId, revision: current.taskRevision, subject: current.taskSubject, status: "pending" } : null;
+  if (!task) {
+    const created = await post(current.floorId, WRITE_ACTION.taskCreate, { subject: current.subject.trim(), description: current.description.trim() });
+    if (!created?.ok) return { phase: "error", error: describeWriteError(created?.error), refreshNeeded: true };
+    task = created.value?.task;
+  }
+  try {
+    if (!task?.id || !task.revision) throw { code: "office/create-unassigned", message: "任务已创建，缺少任务版本，请刷新核对。", details: {} };
+    const assigned = await post(current.floorId, WRITE_ACTION.taskAssign, { taskId: task.id, expectedRevision: task.revision, owner: current.seatName });
+    if (!assigned?.ok) return { phase: "unowned", task, error: describeWriteError(assigned?.error), refreshNeeded: true };
+    task = assigned.value?.task || task;
+  } catch (error) {
+    return { phase: "unowned", task, error: describeWriteError(error), refreshNeeded: true };
+  }
+  if (!current.executeNow) return { phase: "done", task, doneMessage: "任务已指派给 " + current.seatName + "（" + task.id + "）。可在任务看板点击“立即执行”。", refreshNeeded: true };
+  try {
+    const started = await post(current.floorId, WRITE_ACTION.taskStart, { taskId: task.id, expectedRevision: task.revision });
+    if (!started?.ok) throw started?.error || { code: "office/bad-response" };
+    return { phase: "done", task, doneMessage: "任务已指派给 " + current.seatName + "，并已发送立即执行指令（" + task.id + "）。实际进度以成员状态和回复为准。", refreshNeeded: true };
+  } catch (error) {
+    const view = describeWriteError(error);
+    return { phase: "assigned", task, error: view, doneMessage: "任务已指派给 " + current.seatName + "（" + task.id + "），" + (view.deliveryUnknown ? "执行指令送达结果未知。请先查看成员会话，不要重复派活或重发。" : "执行指令发送失败。请检查成员状态后，在任务看板单独发起“立即执行”。"), refreshNeeded: true };
+  }
+}
+function commandScope(sessionId, memberId, taskId = "") {
+  return JSON.stringify([sessionId || "", memberId || "", taskId || ""]);
+}
+function createCommandController({ execute = executeCommandIntent, capacity = 64, ttlMs = 12e4, maxPending = 256, now = Date.now } = {}) {
+  const records = /* @__PURE__ */ new Map();
+  const listeners = /* @__PURE__ */ new Map();
+  const notify = (scope) => {
+    for (const listener of listeners.get(scope) || []) listener(records.get(scope));
+  };
+  function prune() {
+    for (const [scope, record] of records) {
+      if (record.settledAt !== null && now() - record.settledAt >= ttlMs) records.delete(scope);
+    }
+    let settled = [...records].filter(([, record]) => record.settledAt !== null);
+    while (settled.length > capacity) records.delete(settled.shift()[0]);
+  }
+  return {
+    get(scope) {
+      prune();
+      return records.get(scope) || null;
+    },
+    subscribe(scope, listener) {
+      if (!listeners.has(scope)) listeners.set(scope, /* @__PURE__ */ new Set());
+      listeners.get(scope).add(listener);
+      return () => {
+        const set = listeners.get(scope);
+        if (set) {
+          set.delete(listener);
+          if (!set.size) listeners.delete(scope);
+        }
+      };
+    },
+    run(scope, draft) {
+      prune();
+      const existing = records.get(scope);
+      if (existing && existing.settledAt === null) return existing.promise;
+      const atCapacity = [...records.values()].filter((record2) => record2.settledAt === null).length >= maxPending;
+      const intent = { ...draft, phase: "running", fieldError: "" };
+      const record = { intent, view: intent, settledAt: null, promise: null };
+      records.delete(scope);
+      records.set(scope, record);
+      record.promise = Promise.resolve().then(() => atCapacity ? { phase: "error", error: describeWriteError({ code: "office/busy", message: "Too many unresolved operations" }), refreshNeeded: false } : execute(intent)).catch((error) => ({ phase: "error", error: describeWriteError(error), refreshNeeded: true })).then((outcome) => {
+        record.view = { ...intent, ...outcome };
+        record.settledAt = now();
+        notify(scope);
+        prune();
+        return record.view;
+      });
+      notify(scope);
+      return record.promise;
+    },
+    dismiss(scope) {
+      const record = records.get(scope);
+      if (record && record.settledAt !== null) records.delete(scope);
+    }
+  };
+}
+var officeCommandController = createCommandController();
+
+// src/client/commands/use-task-commands.js
+function taskActionProblem(floor, task, gate, kind) {
+  if (!gate?.enabled) return gate?.reason || "当前为只读模式。";
+  if (!task || task.status === "deleted") return "任务已删除或不可用，请刷新。";
+  if (!task.id || !Number.isSafeInteger(task.revision) || task.revision < 1) return "任务版本不可用，请刷新。";
+  if (kind === "delete") {
+    const dependent = floor?.tasks?.find((item) => item.status !== "deleted" && item.id !== task.id && item.blockedBy?.includes(task.id));
+    return dependent ? "任务“" + dependent.subject + "”仍依赖此任务，请先处理依赖。" : "";
+  }
+  if (kind !== "start") return "不支持的任务操作。";
+  const owner = floor?.seats?.find((seat) => task.ownerId ? seat.id === task.ownerId : seat.name === task.ownerName);
+  if (task.status !== "in_progress" || !owner) return "请先将未完成的任务指派给成员。";
+  if (owner.role === "lead" || owner.id === floor.id || owner.id === floor.leadId) return "负责人请在原生会话中安排执行。";
+  if (owner.phase === "failed" || owner.phase === "provisioning") return "成员尚未就绪。";
+  if (task.blockedBy?.some((id) => floor.tasks.find((item) => item.id === id)?.status !== "completed")) return "前置任务尚未完成。";
+  return "";
+}
+function useTaskCommands(props) {
+  const controller = props.commandController || officeCommandController;
+  const [write, setWrite] = import_react2.default.useState(null), [last, setLast] = import_react2.default.useState(null);
+  const current = import_react2.default.useRef({ props, write, mounted: true }), handled = import_react2.default.useRef(null);
+  current.current.props = props;
+  current.current.write = write;
+  const floorId = props.floor?.id || "", visible = write?.floorId === floorId ? write : null;
+  const scope = visible ? commandScope(floorId, "@task-board", visible.taskId) : "";
+  import_react2.default.useEffect(() => {
+    current.current.mounted = true;
+    return () => {
+      current.current.mounted = false;
+    };
+  }, []);
+  import_react2.default.useEffect(() => {
+    setWrite(null);
+    setLast(null);
+  }, [floorId]);
+  function accept(record) {
+    const latest = current.current;
+    if (!record || !latest.mounted || latest.props.floor?.id !== record.intent.floorId || latest.write?.taskId !== record.intent.taskId) return;
+    setWrite(record.view);
+    if (record.settledAt !== null && handled.current !== record) {
+      handled.current = record;
+      setLast({ tone: record.view.phase === "done" ? "ok" : "error", text: record.view.doneMessage || record.view.error?.title || "操作失败" });
+      if (record.view.phase === "done" && record.intent.kind === "delete") latest.props.onDeleted?.(record.intent.taskId);
+      if (record.view.refreshNeeded) latest.props.onRefresh?.();
+    }
+  }
+  import_react2.default.useEffect(() => {
+    if (!scope) return void 0;
+    const unsubscribe = controller.subscribe(scope, accept);
+    accept(controller.get(scope));
+    return unsubscribe;
+  }, [scope, controller]);
+  function close() {
+    if (current.current.write?.phase === "running") return;
+    setWrite(null);
+    if (scope) controller.dismiss(scope);
+  }
+  import_react2.default.useEffect(() => {
+    if (!visible || visible.phase === "running" || typeof document === "undefined") return void 0;
+    const escape = (event) => {
+      if (event.key === "Escape") close();
+    };
+    document.addEventListener("keydown", escape);
+    return () => document.removeEventListener("keydown", escape);
+  }, [scope, visible?.phase]);
+  function open(kind, task) {
+    if (current.current.props.floor?.id !== floorId || current.current.write?.phase === "running") return;
+    const latest = current.current.props, fresh = latest.floor?.tasks?.find((item) => item.id === task.id);
+    const problem = taskActionProblem(latest.floor, fresh, latest.writeGate, kind);
+    if (problem) {
+      setLast({ tone: "error", text: problem });
+      return;
+    }
+    const key = commandScope(floorId, "@task-board", task.id), record = controller.get(key);
+    if (record?.settledAt !== null) controller.dismiss(key);
+    handled.current = null;
+    setWrite(record?.settledAt === null ? record.view : { kind, phase: "compose", floorId, taskId: fresh.id, taskRevision: fresh.revision, taskSubject: fresh.subject, seatName: fresh.ownerName || "", fieldError: "" });
+    setLast(null);
+  }
+  async function confirm() {
+    const latest = current.current, draft = latest.write;
+    if (!latest.mounted || !visible || draft !== visible || draft.phase !== "compose" || latest.props.floor?.id !== floorId) return;
+    const task = latest.props.floor.tasks.find((item) => item.id === draft.taskId);
+    const problem = taskActionProblem(latest.props.floor, task, latest.props.writeGate, draft.kind) || validateWrite(draft) || (task.revision !== draft.taskRevision ? "任务已变化，请关闭后重新确认。" : "");
+    if (problem) {
+      setWrite({ ...draft, fieldError: problem });
+      return;
+    }
+    const pending = controller.run(scope, draft);
+    accept(controller.get(scope));
+    await pending;
+    accept(controller.get(scope));
+  }
+  return { write: visible, last, open, confirm, close, onBackdrop: (event) => {
+    if (event.target === event.currentTarget) close();
+  }, refreshAndClose: () => {
+    props.onRefresh?.();
+    close();
+  } };
+}
+
+// src/client/task-board.js
+var h = import_react3.default.createElement;
+function taskOwnerSeat(task, seats) {
+  if (task.ownerId) return seats.find(function(seat) {
+    return seat.id === task.ownerId;
+  }) || null;
+  return task.ownerName ? seats.find(function(seat) {
+    return seat.name === task.ownerName;
+  }) || null : null;
+}
+function TaskBoard(props) {
+  var filterState = import_react3.default.useState("all"), searchState = import_react3.default.useState(""), expandedState = import_react3.default.useState(null);
+  var limitState = import_react3.default.useState({ key: "", count: 50 });
+  var view = props.view ? props.view.value : { filter: filterState[0], search: searchState[0], expandedTaskId: expandedState[0] };
+  function change(patch) {
+    if (props.view) {
+      props.view.change(patch);
+      return;
+    }
+    if (patch.filter !== void 0) filterState[1](patch.filter);
+    if (patch.search !== void 0) searchState[1](patch.search);
+    if (patch.expandedTaskId !== void 0) expandedState[1](patch.expandedTaskId);
+  }
+  var floor = props.floor, tasks = (floor.tasks || []).filter(function(t) {
+    return t.status !== "deleted";
+  });
+  var filter = view.filter, query = view.search.trim().toLocaleLowerCase();
+  var shown = tasks.filter(function(task) {
+    var matches = filter === "all" || (filter === "blocked" ? isTaskBlocked(task) : task.status === filter);
+    return matches && (!query || (task.subject + " " + task.ownerName + " " + task.id).toLocaleLowerCase().includes(query));
+  });
+  var rank = { in_progress: 0, pending: 1, completed: 2 };
+  shown.sort(function(a, b) {
+    return rank[a.status] - rank[b.status];
+  });
+  var completed = tasks.filter(function(t) {
+    return t.status === "completed";
+  }).length;
+  var page = props.view ? props.view.value.taskPage || { key: "", count: 50 } : limitState[0];
+  var listKey = filter + "\n" + query, limit = page.key === listKey ? page.count : 50;
+  var tabs = [["all", "全部"], ["in_progress", "进行中"], ["pending", "待办"], ["blocked", "受阻"], ["completed", "已完成"]];
+  return h(
+    "section",
+    { className: "cid-task-board", "aria-label": "任务看板" },
+    props.taskActionStatus ? h("p", { className: "cid-write-status", role: "status", "data-tone": props.taskActionStatus.tone }, props.taskActionStatus.text) : null,
+    h(
+      "div",
+      { className: "cid-board-controls" },
+      h(
+        "div",
+        { className: "cid-task-filter-row" },
+        h("div", { className: "cid-task-tabs", "aria-label": "筛选任务" }, tabs.map(function(tab) {
+          var count = tasks.filter(function(t) {
+            return tab[0] === "all" || (tab[0] === "blocked" ? isTaskBlocked(t) : t.status === tab[0]);
+          }).length;
+          return h("button", { key: tab[0], type: "button", "aria-pressed": filter === tab[0], onClick: function() {
+            change({ filter: tab[0] });
+          } }, tab[1], h("span", null, count));
+        })),
+        h("button", { type: "button", className: "cid-task-progress", "aria-pressed": filter === "completed", title: filter === "completed" ? "显示全部任务" : "只看已完成任务", onClick: function() {
+          change({ filter: filter === "completed" ? "all" : "completed" });
+        } }, h("span", null, completed + " / " + tasks.length + " 已完成"), h("progress", { value: completed, max: tasks.length || 1, "aria-label": "已完成任务" }))
+      ),
+      h("input", { type: "search", value: view.search, placeholder: "搜索任务或负责人", "aria-label": "搜索任务或负责人", onChange: function(e) {
+        change({ search: e.target.value });
+      } })
+    ),
+    shown.length ? h("ul", { className: "cid-task-list" }, shown.slice(0, limit).map(function(task) {
+      var owner = taskOwnerSeat(task, floor.seats || []), blocked = isTaskBlocked(task), expanded = view.expandedTaskId === task.id;
+      return h(
+        "li",
+        { key: task.id, "data-task-id": task.id, "data-selected": props.selectedTaskId === task.id ? "1" : "0", "data-recent": props.recent && props.recent.has("task:" + task.id) ? "1" : "0" },
+        h(
+          "button",
+          { type: "button", className: "cid-task-row", "aria-expanded": expanded, onClick: function() {
+            change({ expandedTaskId: expanded ? null : task.id });
+            if (props.onSelectTask) props.onSelectTask(task);
+          } },
+          h("span", { className: "cid-task-mark", "data-status": task.status, "data-blocked": blocked ? "1" : "0" }, task.status === "completed" ? "✓" : blocked ? "!" : task.status === "in_progress" ? "›" : "·"),
+          h("span", { className: "cid-task-copy" }, h("strong", null, task.subject), h("small", null, task.id + (blocked ? " · 等待依赖完成" : ""))),
+          h("span", { className: "cid-task-owner" }, owner ? owner.name : task.ownerName || "未指派"),
+          h("span", { className: "cid-task-state", "data-status": blocked ? "blocked" : task.status }, blocked ? "受阻" : taskStatusLabel(task.status)),
+          h("span", { className: "cid-task-chevron" }, expanded ? "−" : "+")
+        ),
+        expanded ? h(
+          "div",
+          { className: "cid-task-expanded" },
+          h("p", null, task.description || "暂无任务说明。"),
+          task.blockedBy && task.blockedBy.length ? h("div", null, h("b", null, "前置任务"), h("ul", null, task.blockedBy.map(function(id) {
+            var dependency = tasks.find(function(t) {
+              return t.id === id;
+            });
+            return h("li", { key: id }, (dependency ? dependency.subject : id) + " · " + (dependency ? taskStatusLabel(dependency.status) : "未找到"));
+          }))) : null,
+          task.writeScopes && task.writeScopes.length ? h("p", null, "工作范围：" + task.writeScopes.join("、")) : null,
+          task.writeScopeWarnings && task.writeScopeWarnings.length ? h("p", { className: "cid-office-warning" }, task.writeScopeWarnings.join("；")) : null,
+          h("p", { className: "cid-muted" }, owner ? "已联动负责人详情，可查看或操作这项任务。" : "此任务尚未关联到可用成员。"),
+          props.onTaskAction ? h("div", { className: "cid-task-actions" }, ["start", "delete"].map(function(kind) {
+            var problem = taskActionProblem(floor, task, props.writeGate, kind);
+            return h("button", { key: kind, type: "button", className: "cid-task-action", "data-task-action": kind, "data-tone": kind === "delete" ? "danger" : "primary", disabled: !!problem, title: problem || void 0, "aria-label": (kind === "delete" ? "删除任务：" : "立即执行：") + task.subject, onClick: function() {
+              props.onTaskAction(kind, task);
+            } }, kind === "delete" ? "删除任务" : "立即执行");
+          })) : null
+        ) : null
+      );
+    })) : h("div", { className: "cid-board-empty" }, floor.tasksAvailable === false ? "任务明细尚未同步，请稍后刷新。" : tasks.length ? "没有符合条件的任务" : "该部门尚未创建任务。选择成员后可使用“派活”。"),
+    shown.length > limit ? h("button", { type: "button", className: "cid-btn", onClick: function() {
+      if (props.view) props.view.change({ taskPage: { key: listKey, count: limit + 50 } });
+      else limitState[1]({ key: listKey, count: limit + 50 });
+    } }, "显示更多（剩余 " + (shown.length - limit) + " 项）") : null
+  );
+}
+
 // src/client/components/sections.js
-var import_react3 = __toESM(require("react"), 1);
+var import_react4 = __toESM(require("react"), 1);
 
 // src/client/office-scene.js
-var React4 = __toESM(require("react"), 1);
+var React5 = __toESM(require("react"), 1);
 
 // src/client/scene/model.js
 function officeHash(value) {
@@ -1662,7 +1881,7 @@ function createOfficeLayout(members) {
   var rows = Math.max(2, Math.ceil(members.length / 3));
   var layout = { width: 640, height: Math.max(384, 128 * rows + 136), seats: [], occupied: /* @__PURE__ */ new Set(), blocked: /* @__PURE__ */ new Set() };
   members.forEach(function(member, index) {
-    layout.seats.push({ id: member.id, x: 216 + index % 3 * 144, y: 168 + Math.floor(index / 3) * 128, index });
+    layout.seats.push({ id: member.id, x: 216 + index % 3 * 160, y: 184 + Math.floor(index / 3) * 128, index });
   });
   layout.seats.forEach(function(seat) {
     for (var dx = -1; dx <= 1; dx++) layout.occupied.add(Math.floor(seat.x / 16) + dx + "," + Math.floor(seat.y / 16));
@@ -1673,7 +1892,8 @@ function createOfficeLayout(members) {
     var wall = x < 1 || x > 38 || py < 104 || py > layout.height - 20;
     var furniture = px < 144 && (py < 176 || py > 220 && py < 304);
     var desk = layout.seats.some(function(seat) {
-      return Math.abs(px - seat.x) < 48 && py >= seat.y - 64 && py < seat.y - 16;
+      var dx = Math.abs(px - seat.x);
+      return dx < 64 && py >= seat.y - 110 && py < seat.y - 16;
     });
     if (wall || furniture || desk) layout.blocked.add(x + "," + y);
   }
@@ -1854,12 +2074,18 @@ function drawOfficeRoom(ctx, layout, scheme) {
   ctx.fillText("TAKE A BREATH.", 42, hg - 15);
   layout.seats.forEach(function(s) {
     var x2 = s.x, y2 = s.y;
-    rect(x2 - 44, y2 - 52, 89, 40, "#b6c3a9");
-    rect(x2 - 42, y2 - 58, 84, 29, "#e2cba4");
-    line(x2 - 41, y2 - 58, 82, "#f7e7c9");
-    rect(x2 - 42, y2 - 29, 84, 6, "#bda680");
-    rect(x2 - 39, y2 - 23, 4, 14, "#aa9677");
-    rect(x2 + 34, y2 - 23, 4, 14, "#aa9677");
+    rect(x2 - 64, y2 - 110, 128, 88, "#9fb49b");
+    rect(x2 - 61, y2 - 107, 122, 80, "#bacab3");
+    line(x2 - 63, y2 - 110, 126, "#e8eee0");
+    line(x2 - 59, y2 - 84, 118, "#a6bdb5");
+    rect(x2 - 64, y2 - 80, 4, 64, "#9fb49b");
+    rect(x2 + 60, y2 - 80, 4, 64, "#9fb49b");
+    rect(x2 - 60, y2 - 52, 120, 40, "#b6c3a9");
+    rect(x2 - 60, y2 - 58, 120, 29, "#e2cba4");
+    line(x2 - 59, y2 - 58, 118, "#f7e7c9");
+    rect(x2 - 60, y2 - 29, 120, 6, "#bda680");
+    rect(x2 - 57, y2 - 23, 4, 14, "#aa9677");
+    rect(x2 + 53, y2 - 23, 4, 14, "#aa9677");
     rect(x2 - 24, y2 - 83, 43, 27, "#15222b");
     rect(x2 - 21, y2 - 80, 37, 21, "#2c444d");
     rect(x2 - 4, y2 - 56, 4, 5, "#23313a");
@@ -1902,10 +2128,7 @@ function paintOffice(ctx, layout, room, actors, membersById, images, selectedId,
     if (actor.id === selectedId) {
       ctx.strokeStyle = officeSceneColor("#3c8a68", scheme);
       ctx.lineWidth = 1;
-      ctx.strokeRect(home.x - 48, home.y - 89, 96, 106);
-      ctx.fillStyle = officeSceneColor("#3c8a68", scheme);
-      ctx.fillRect(home.x - 49, home.y - 90, 8, 2);
-      ctx.fillRect(home.x + 41, home.y + 16, 8, 2);
+      ctx.strokeRect(home.x - 65, home.y - 111, 130, 96);
     }
     ctx.globalAlpha = 0.28;
     ctx.fillStyle = officeSceneColor("#586a4f", scheme);
@@ -2078,12 +2301,12 @@ function createOfficeEngine({ canvas, layout, getCurrent, loadImages, onImageSta
 }
 
 // src/client/office-scene.js
-var h2 = React4.createElement;
+var h2 = React5.createElement;
 function OfficeScene(props) {
   var floor = props.floor, all = floor && Array.isArray(floor.seats) ? floor.seats : [];
-  var pageState = React4.useState(0), page = Math.min(pageState[0], Math.max(0, Math.ceil(all.length / 12) - 1));
+  var pageState = React5.useState(0), page = Math.min(pageState[0], Math.max(0, Math.ceil(all.length / 12) - 1));
   var members = all.slice(page * 12, page * 12 + 12);
-  React4.useEffect(function() {
+  React5.useEffect(function() {
     var index = all.findIndex(function(member) {
       return member.id === props.selectedSeatId;
     });
@@ -2092,12 +2315,12 @@ function OfficeScene(props) {
     return m.id;
   }).join("|")]);
   var mode = "lively";
-  var errorState = React4.useState(false);
-  var reducedState = React4.useState(function() {
+  var errorState = React5.useState(false);
+  var reducedState = React5.useState(function() {
     return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   });
-  var canvasRef = React4.useRef(null), latest = React4.useRef(null), engineRef = React4.useRef(null);
-  var hoverState = React4.useState(null), hoverRef = React4.useRef(null), tooltipId = React4.useId();
+  var canvasRef = React5.useRef(null), latest = React5.useRef(null), engineRef = React5.useRef(null);
+  var hoverState = React5.useState(null), hoverRef = React5.useRef(null), tooltipId = React5.useId();
   function showHover(anchor) {
     if ((hoverRef.current && hoverRef.current.id) === (anchor && anchor.id)) return;
     hoverRef.current = anchor;
@@ -2111,7 +2334,7 @@ function OfficeScene(props) {
     return actors.find(function(a) {
       return Math.abs(point.x - a.x) < 18 && point.y > a.y - 42 && point.y < a.y + 8;
     }) || layout.seats.find(function(a) {
-      return Math.abs(point.x - a.x) < 48 && point.y > a.y - 88 && point.y < a.y + 10;
+      return Math.abs(point.x - a.x) < 64 && point.y > a.y - 110 && point.y < a.y + 10;
     }) || null;
   }
   var signature = members.map(function(m) {
@@ -2120,14 +2343,14 @@ function OfficeScene(props) {
   var sceneSignal = members.map(function(m) {
     return [m.id, m.state, m.live, m.tool && m.tool.name].join(":");
   }).join("|");
-  var layout = React4.useMemo(function() {
+  var layout = React5.useMemo(function() {
     return createOfficeLayout(members);
   }, [signature]);
-  React4.useEffect(function() {
+  React5.useEffect(function() {
     showHover(null);
   }, [signature, props.visible]);
   latest.current = { members, selectedId: props.selectedSeatId, mode, reduced: reducedState[0], active: props.active !== false, visible: props.visible !== false, scheme: props.scheme };
-  React4.useEffect(function() {
+  React5.useEffect(function() {
     var media = window.matchMedia("(prefers-reduced-motion: reduce)");
     var change = function() {
       reducedState[1](media.matches);
@@ -2137,7 +2360,7 @@ function OfficeScene(props) {
       media.removeEventListener("change", change);
     };
   }, []);
-  React4.useEffect(function() {
+  React5.useEffect(function() {
     var canvas = canvasRef.current;
     if (!canvas) return;
     var engine = createOfficeEngine({ canvas, layout, getCurrent: function() {
@@ -2151,10 +2374,10 @@ function OfficeScene(props) {
       engineRef.current = null;
     };
   }, [layout]);
-  React4.useEffect(function() {
+  React5.useEffect(function() {
     if (engineRef.current) engineRef.current.wake();
   }, [sceneSignal, props.selectedSeatId, props.scheme, mode, reducedState[0]]);
-  React4.useEffect(function() {
+  React5.useEffect(function() {
     if (engineRef.current) engineRef.current.wake(true);
   }, [props.active, props.visible]);
   if (!members.length) return null;
@@ -2172,7 +2395,7 @@ function OfficeScene(props) {
       }, onKeyDown: function(event) {
         if (event.key === "Escape") showHover(null);
       }, style: { width: "100%", aspectRatio: layout.width + " / " + layout.height } },
-      h2("canvas", { ref: canvasRef, width: layout.width, height: layout.height, "aria-label": "像素办公室。使用下方工位按钮选择成员。", role: "img", onPointerMove: function(event) {
+      h2("canvas", { ref: canvasRef, width: layout.width, height: layout.height, "aria-label": "像素办公室。点击卡座上的工牌选择成员。", role: "img", onPointerMove: function(event) {
         if (event.pointerType !== "touch") showHover(hit(event));
       }, onClick: function(event) {
         var target = hit(event);
@@ -2183,7 +2406,7 @@ function OfficeScene(props) {
       } }),
       layout.seats.map(function(seat, i) {
         var member = members[i];
-        return h2("button", { type: "button", key: member.id, className: "cid-desk-label", "aria-pressed": member.id === props.selectedSeatId, "aria-describedby": hovered && hovered.id === member.id ? tooltipId : void 0, "data-state": member.state, "data-recent": props.recent && props.recent.has("seat:" + member.id) ? "1" : "0", style: { left: seat.x / layout.width * 100 + "%", top: (seat.y + 13) / layout.height * 100 + "%", "--seat-tone": officeTone(member.state, props.scheme) }, onPointerEnter: function(event) {
+        return h2("button", { type: "button", key: member.id, className: "cid-desk-label", "aria-pressed": member.id === props.selectedSeatId, "aria-describedby": hovered && hovered.id === member.id ? tooltipId : void 0, "aria-label": member.name + " · " + (member.live === false ? "休眠" : labelOf(member.state)) + " · 查看员工介绍", "data-state": member.state, "data-recent": props.recent && props.recent.has("seat:" + member.id) ? "1" : "0", style: { left: seat.x / layout.width * 100 + "%", top: (seat.y - 105) / layout.height * 100 + "%", height: 18 / layout.height * 100 + "%", "--seat-tone": officeTone(member.state, props.scheme) }, onPointerEnter: function(event) {
           if (event.pointerType !== "touch") showHover(seat);
         }, onFocus: function() {
           showHover(seat);
@@ -2192,16 +2415,16 @@ function OfficeScene(props) {
         }, onClick: function() {
           showHover(null);
           props.onSelectSeat(member.id);
-        } }, h2("span", null, h2("i", null), h2("b", null, member.name)), h2("small", null, member.live === false ? "休眠" : member.state === "tool-running" && member.tool ? member.tool.name : labelOf(member.state)));
+        } }, h2("span", null, h2("i", null), h2("b", null, member.name)), h2("small", null, member.live === false ? "休眠" : labelOf(member.state)));
       }),
       summary ? h2("div", { id: tooltipId, role: "tooltip", className: "cid-office-tooltip", style: { left: "clamp(8px, " + hoverState[0].x / layout.width * 100 + "%, calc(100% - 228px))", top: "clamp(8px, " + (hoverState[0].y - 60) / layout.height * 100 + "%, calc(100% - 128px))" } }, h2("strong", null, summary.name + " · " + summary.state), h2("span", null, summary.task), summary.tool ? h2("small", null, "工具：" + summary.tool) : null) : null
     )),
-    errorState[0] ? h2("p", { className: "cid-office-warning", role: "alert" }, "人物素材加载失败，仍可通过工位标签和成员列表查看任务。") : null,
+    errorState[0] ? h2("p", { className: "cid-office-warning", role: "alert" }, "人物素材加载失败，仍可通过卡座工牌和成员列表查看任务。") : null,
     h2(
       "div",
       { className: "cid-office-footer" },
-      h2("span", null, reducedState[0] ? "已跟随系统减少动态效果" : floor.live ? "动作随工作状态变化 · 仅空闲成员会短暂休息" : "冷会话保留工位，人物与屏幕静止"),
-      h2("span", null, "点击工位查看任务"),
+      h2("span", null, reducedState[0] ? "已跟随系统减少动态效果" : floor.live ? "动作随工作状态变化 · 仅空闲成员会短暂休息" : "冷会话保留卡座，人物与屏幕静止"),
+      h2("span", null, "点击卡座工牌查看任务"),
       all.length > 12 ? h2("div", { className: "cid-scene-pages" }, h2("button", { type: "button", disabled: page === 0, onClick: function() {
         pageState[1](page - 1);
       } }, "上一组"), h2("span", null, page + 1 + " / " + Math.ceil(all.length / 12)), h2("button", { type: "button", disabled: (page + 1) * 12 >= all.length, onClick: function() {
@@ -2212,11 +2435,11 @@ function OfficeScene(props) {
 }
 
 // src/client/components/sections.js
-var h3 = import_react3.default.createElement;
+var h3 = import_react4.default.createElement;
 function CollapsibleSection(props) {
-  var expandedState = import_react3.default.useState(true);
+  var expandedState = import_react4.default.useState(true);
   var expanded = props.expanded === void 0 ? expandedState[0] : props.expanded;
-  var contentId = import_react3.default.useId();
+  var contentId = import_react4.default.useId();
   return h3(
     "section",
     { className: "cid-fold cid-fold-" + props.sectionKey, "aria-label": props.title },
@@ -2262,17 +2485,17 @@ function FloorPane(props) {
       { key: "tasks-" + floor.id, sectionKey: "tasks", title: "任务看板", meta: floor.tasks.filter(function(task) {
         return task.status !== "deleted";
       }).length + " 项", expanded: props.view.value.folds.tasks, onToggle: props.view.fold, lazy: true },
-      h3(TaskBoard, { floor, onSelectTask: props.onSelectTask, selectedTaskId: props.selectedTaskId, view: props.view, recent: props.recent })
+      h3(TaskBoard, { floor, onSelectTask: props.onSelectTask, selectedTaskId: props.selectedTaskId, view: props.view, recent: props.recent, writeGate: props.writeGate, onTaskAction: props.onTaskAction, taskActionStatus: props.taskActionStatus })
     )
   );
 }
 
 // src/client/components/employee-card.js
-var import_react7 = __toESM(require("react"), 1);
+var import_react8 = __toESM(require("react"), 1);
 
 // src/client/components/primitives.js
-var import_react4 = __toESM(require("react"), 1);
-var h4 = import_react4.default.createElement;
+var import_react5 = __toESM(require("react"), 1);
+var h4 = import_react5.default.createElement;
 function CyberIcon(props) {
   var size = typeof props.size === "number" && props.size > 0 ? props.size : 18;
   return h4(
@@ -2318,8 +2541,8 @@ function Fact(props) {
 }
 
 // src/client/components/write-modal.js
-var import_react5 = __toESM(require("react"), 1);
-var h5 = import_react5.default.createElement;
+var import_react6 = __toESM(require("react"), 1);
+var h5 = import_react6.default.createElement;
 function writeRow(label, value) {
   return h5("div", { className: "cid-modal-row", key: label }, h5("span", null, label), h5("span", null, value));
 }
@@ -2350,22 +2573,22 @@ function WriteButton(props) {
 }
 function WriteModal(props) {
   var write = props.write;
-  var modalRef = import_react5.default.useRef(null);
-  import_react5.default.useEffect(function() {
+  var modalRef = import_react6.default.useRef(null);
+  import_react6.default.useEffect(function() {
     var previousFocus = document.activeElement;
     return function() {
       if (previousFocus && previousFocus.isConnected && previousFocus.focus) previousFocus.focus();
     };
   }, []);
-  import_react5.default.useEffect(function() {
+  import_react6.default.useEffect(function() {
     var node = modalRef.current;
     if (!node) return;
-    var first = node.querySelector("input,textarea,button:not(:disabled)");
+    var first = node.querySelector("input:not(:disabled),textarea:not(:disabled),select:not(:disabled),button:not(:disabled)");
     (first || node).focus();
   }, [write.phase]);
   function trapFocus(event) {
     if (event.key !== "Tab" || !modalRef.current) return;
-    var nodes = Array.from(modalRef.current.querySelectorAll("button:not(:disabled),input:not(:disabled),textarea:not(:disabled)"));
+    var nodes = Array.from(modalRef.current.querySelectorAll("button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled)"));
     if (!nodes.length) {
       event.preventDefault();
       return;
@@ -2467,7 +2690,19 @@ function WriteModal(props) {
           )
         );
       }
-      body.push(h5("p", { className: "cid-modal-note", key: "note" }, "确认后指派给 " + text(write.seatName) + "。指派只更新任务看板；如需立即处理，请另发消息通知成员。"));
+      body.push(h5(
+        "label",
+        { className: "cid-execute-option", key: "execute" },
+        h5("input", {
+          type: "checkbox",
+          "data-cyber-field": "assign-execute-now",
+          checked: write.executeNow === true,
+          disabled: write.executeAllowed === false,
+          onChange: (event) => props.onPatch({ executeNow: event.target.checked, fieldError: "" })
+        }),
+        h5("span", null, "指派后立即执行")
+      ));
+      body.push(h5("p", { className: "cid-modal-note", key: "note" }, write.executeAllowed === false ? "该成员不能接收团队执行指令。可以先指派，再在原生会话中安排执行。" : write.executeNow ? "指派成功后自动发送执行指令；若成员正在工作，会收到追加指令。实际进度以成员状态和回复为准。" : "仅指派任务。之后也可在任务看板点击“立即执行”。"));
     } else if (kind === "interrupt") {
       subtitle = "目标 " + text(write.seatName) + " · 不可撤销";
       body.push(
@@ -2490,19 +2725,30 @@ function WriteModal(props) {
           writeRow("任务", text(write.taskId)),
           writeRow("标题", text(write.taskSubject) || "—"),
           writeRow("版本", "rev " + String(write.taskRevision || 0)),
-          writeRow("动作", kind === "reopen" ? "task.reopen" : "task.complete")
+          writeRow("动作", { reopen: "重开为待办", complete: "标记完成", delete: "删除任务", start: "通知当前负责人立即执行" }[kind])
         )
       );
-      body.push(h5("p", { className: "cid-modal-warn", key: "warn" }, kind === "reopen" ? "重开会恢复为待办，并取消原负责人。需要继续执行时，请重新派活。" : "只将这项任务标记完成，不会打断成员当前回合。"));
+      const taskWarning = {
+        reopen: "重开会恢复为待办，并取消原负责人。需要继续执行时，请重新派活。",
+        complete: "只将这项任务标记完成，不会打断成员当前回合。",
+        delete: "确认后从任务看板移除，插件不提供恢复入口。有其他任务依赖它时不能删除。删除不会打断成员当前回合，如需停止工作请另行打断。",
+        start: "向当前负责人发送立即执行指令。若成员正在工作，会收到追加指令，不会强制打断；实际进度以成员状态和回复为准。"
+      };
+      body.push(h5("p", { className: "cid-modal-warn", key: "warn" }, taskWarning[kind]));
     }
     if (fieldError) body.push(h5("p", { className: "cid-write-error", role: "alert", key: "field-error", "data-cyber-field-error": "1" }, fieldError));
   } else if (phase === "running") {
     subtitle = "提交中 · 不会自动重试";
-    body.push(h5("p", { className: "cid-modal-note", key: "running" }, kind === "assign" ? "正在创建任务并指派…" : "正在提交到 " + COMMAND_PATH + "…"));
+    body.push(h5("p", { className: "cid-modal-note", key: "running" }, kind === "assign" ? write.executeNow ? "正在指派任务并发送执行指令…" : "正在指派任务…" : "正在提交到 " + COMMAND_PATH + "…"));
     body.push(h5("p", { className: "cid-modal-note", key: "no-retry" }, "不会自动重试；结果返回后请按提示处理。"));
   } else if (phase === "done") {
-    subtitle = "已提交 · 已刷新快照";
+    subtitle = "已提交 · 正在同步最新状态";
     body.push(h5("p", { className: "cid-write-status", "data-tone": "ok", role: "status", key: "done" }, text(write.doneMessage) || "操作成功。"));
+  } else if (phase === "assigned") {
+    title = write.error && write.error.deliveryUnknown ? "已指派，执行指令结果待确认" : "已指派，执行指令未送达";
+    subtitle = "保留指派结果 · 不会重复创建或自动重发";
+    body.push(h5("p", { className: "cid-modal-warn", key: "assigned" }, write.doneMessage));
+    if (write.error) body.push(writeErrorCard(write.error));
   } else if (phase === "unowned") {
     title = write.error && write.error.deliveryUnknown ? "任务已创建，指派结果待确认" : "任务保留在看板，指派未完成";
     subtitle = "先刷新核对，再通过派活选择现有任务";
@@ -2538,11 +2784,11 @@ function WriteModal(props) {
           key: "confirm",
           type: "button",
           className: "cid-modal-btn",
-          "data-tone": kind === "interrupt" || kind === "complete" ? "danger" : "primary",
+          "data-tone": ["interrupt", "complete", "delete"].includes(kind) ? "danger" : "primary",
           "data-cyber-confirm": "1",
           onClick: props.onConfirm
         },
-        kind === "assign" && write.taskId ? "确认指派" : WRITE_CONFIRM_LABEL[kind] || "确认"
+        kind === "assign" ? write.executeNow ? "确认指派并立即执行" : write.taskId ? "确认指派" : WRITE_CONFIRM_LABEL.assign : WRITE_CONFIRM_LABEL[kind] || "确认"
       )
     );
   } else if (phase !== "running") {
@@ -2565,96 +2811,7 @@ function WriteModal(props) {
 }
 
 // src/client/commands/use-commands.js
-var import_react6 = __toESM(require("react"), 1);
-
-// src/client/commands/controller.js
-async function executeCommandIntent(current, post = postOfficeCommand) {
-  try {
-    if (current.kind === "assign") return await executeAssignment(current, post);
-    const result = await post(current.floorId, actionOfWrite(current), argsOfWrite(current));
-    if (!result || result.ok !== true) return { phase: "error", error: describeWriteError(result?.error), refreshNeeded: false };
-    const value = isObject(result.value) ? result.value : {};
-    return { phase: "done", value, task: value.task || null, doneMessage: describeWriteSuccess(current.kind, value, current.seatName), refreshNeeded: true };
-  } catch (error) {
-    return { phase: "error", error: describeWriteError(error), refreshNeeded: true };
-  }
-}
-async function executeAssignment(current, post) {
-  let task = current.taskId ? { id: current.taskId, revision: current.taskRevision, subject: current.taskSubject, status: "pending" } : null;
-  if (!task) {
-    const created = await post(current.floorId, WRITE_ACTION.taskCreate, { subject: current.subject.trim(), description: current.description.trim() });
-    if (!created?.ok) return { phase: "error", error: describeWriteError(created?.error), refreshNeeded: true };
-    task = created.value?.task;
-  }
-  try {
-    if (!task?.id || !task.revision) throw { code: "office/create-unassigned", message: "任务已创建，缺少任务版本，请刷新核对。", details: {} };
-    const assigned = await post(current.floorId, WRITE_ACTION.taskAssign, { taskId: task.id, expectedRevision: task.revision, owner: current.seatName });
-    if (!assigned?.ok) return { phase: "unowned", task, error: describeWriteError(assigned?.error), refreshNeeded: true };
-    return { phase: "done", task: assigned.value?.task || task, doneMessage: "任务已指派给 " + current.seatName + "（" + task.id + "）。如需立即处理，可发消息通知成员。", refreshNeeded: true };
-  } catch (error) {
-    return { phase: "unowned", task, error: describeWriteError(error), refreshNeeded: true };
-  }
-}
-function commandScope(sessionId, memberId, taskId = "") {
-  return JSON.stringify([sessionId || "", memberId || "", taskId || ""]);
-}
-function createCommandController({ execute = executeCommandIntent, capacity = 64, ttlMs = 12e4, maxPending = 256, now = Date.now } = {}) {
-  const records = /* @__PURE__ */ new Map();
-  const listeners = /* @__PURE__ */ new Map();
-  const notify = (scope) => {
-    for (const listener of listeners.get(scope) || []) listener(records.get(scope));
-  };
-  function prune() {
-    for (const [scope, record] of records) {
-      if (record.settledAt !== null && now() - record.settledAt >= ttlMs) records.delete(scope);
-    }
-    let settled = [...records].filter(([, record]) => record.settledAt !== null);
-    while (settled.length > capacity) records.delete(settled.shift()[0]);
-  }
-  return {
-    get(scope) {
-      prune();
-      return records.get(scope) || null;
-    },
-    subscribe(scope, listener) {
-      if (!listeners.has(scope)) listeners.set(scope, /* @__PURE__ */ new Set());
-      listeners.get(scope).add(listener);
-      return () => {
-        const set = listeners.get(scope);
-        if (set) {
-          set.delete(listener);
-          if (!set.size) listeners.delete(scope);
-        }
-      };
-    },
-    run(scope, draft) {
-      prune();
-      const existing = records.get(scope);
-      if (existing && existing.settledAt === null) return existing.promise;
-      const atCapacity = [...records.values()].filter((record2) => record2.settledAt === null).length >= maxPending;
-      const intent = { ...draft, phase: "running", fieldError: "" };
-      const record = { intent, view: intent, settledAt: null, promise: null };
-      records.delete(scope);
-      records.set(scope, record);
-      record.promise = Promise.resolve().then(() => atCapacity ? { phase: "error", error: describeWriteError({ code: "office/busy", message: "Too many unresolved operations" }), refreshNeeded: false } : execute(intent)).catch((error) => ({ phase: "error", error: describeWriteError(error), refreshNeeded: true })).then((outcome) => {
-        record.view = { ...intent, ...outcome };
-        record.settledAt = now();
-        notify(scope);
-        prune();
-        return record.view;
-      });
-      notify(scope);
-      return record.promise;
-    },
-    dismiss(scope) {
-      const record = records.get(scope);
-      if (record && record.settledAt !== null) records.delete(scope);
-    }
-  };
-}
-var officeCommandController = createCommandController();
-
-// src/client/commands/use-commands.js
+var import_react7 = __toESM(require("react"), 1);
 function commandCapabilities(props) {
   const seat = props.seat && props.taskOverride ? { ...props.seat, task: props.taskOverride } : props.seat;
   const floor = props.floor;
@@ -2687,15 +2844,15 @@ function statusOfOutcome(view) {
 function useOfficeCommands(props) {
   const facts = commandCapabilities(props);
   const { seat, floorId, actionRef, canWrite, blockedReason } = facts;
-  const [write, setWrite] = import_react6.default.useState(null);
-  const [last, setLast] = import_react6.default.useState(null);
+  const [write, setWrite] = import_react7.default.useState(null);
+  const [last, setLast] = import_react7.default.useState(null);
   const controller = props.commandController || officeCommandController;
   const scope = commandScope(floorId, seat?.id, props.taskOverride?.id);
-  const current = import_react6.default.useRef({ scope, facts, props, mounted: true });
+  const current = import_react7.default.useRef({ scope, facts, props, mounted: true });
   current.current.scope = scope;
   current.current.facts = facts;
   current.current.props = props;
-  const handled = import_react6.default.useRef(null);
+  const handled = import_react7.default.useRef(null);
   function accept(record) {
     if (!record || !current.current.mounted || current.current.scope !== scope) return;
     setWrite(record.view);
@@ -2707,20 +2864,20 @@ function useOfficeCommands(props) {
       }
     }
   }
-  import_react6.default.useEffect(() => {
+  import_react7.default.useEffect(() => {
     current.current.mounted = true;
     return () => {
       current.current.mounted = false;
     };
   }, []);
-  import_react6.default.useEffect(() => {
+  import_react7.default.useEffect(() => {
     handled.current = null;
     const record = controller.get(scope);
     setWrite(record?.settledAt === null ? record.view : null);
     setLast(record && record.settledAt !== null ? statusOfOutcome(record.view) : null);
     return controller.subscribe(scope, accept);
   }, [scope, controller]);
-  import_react6.default.useEffect(() => {
+  import_react7.default.useEffect(() => {
     if (!write || write.phase === "running" || typeof document === "undefined" || !document.addEventListener) return void 0;
     const escape = (event) => {
       if (event.key === "Escape") closeWrite();
@@ -2742,7 +2899,7 @@ function useOfficeCommands(props) {
   }
   const openMessage = () => open({ kind: "message", text: "" });
   const openInterrupt = () => open({ kind: "interrupt", seatState: seat?.state });
-  const openAssign = () => open({ kind: "assign", subject: "", description: "" });
+  const openAssign = () => open({ kind: "assign", subject: "", description: "", executeNow: false, executeAllowed: facts.messageAllowed });
   function openTask(kind) {
     if (!actionRef?.id || !actionRef.revision) return;
     open({ kind, taskId: actionRef.id, taskRevision: actionRef.revision, taskSubject: actionRef.subject });
@@ -2758,7 +2915,7 @@ function useOfficeCommands(props) {
       setWrite({ ...draft, fieldError: "写通道不可用：" + latest.blockedReason });
       return;
     }
-    if (draft.floorId !== latest.floorId || draft.seatName !== latest.seat?.name || draft.kind === "message" && !latest.messageAllowed || draft.kind === "interrupt" && !latest.interruptAllowed || draft.kind === "assign" && !latest.assignAllowed || ["complete", "reopen"].includes(draft.kind) && !latest.taskAllowed) {
+    if (draft.floorId !== latest.floorId || draft.seatName !== latest.seat?.name || draft.kind === "message" && !latest.messageAllowed || draft.kind === "interrupt" && !latest.interruptAllowed || draft.kind === "assign" && !latest.assignAllowed || draft.kind === "assign" && draft.executeNow && !latest.messageAllowed || ["complete", "reopen"].includes(draft.kind) && !latest.taskAllowed) {
       setWrite({ ...draft, fieldError: "目标或状态已变化，请关闭后重新选择。" });
       return;
     }
@@ -2854,12 +3011,11 @@ function openNativeSession(sessionId) {
 }
 
 // src/client/components/employee-card.js
-var h6 = import_react7.default.createElement;
+var h6 = import_react8.default.createElement;
 function DetailPane(props) {
   const { seat, floor, write, last, gate, canWrite, floorId, taskRef, actionRef, actionKind, taskReady, taskCompleted, blockedReason, selfTarget, memberReady, messageAllowed, interruptAllowed, assignAllowed, taskAllowed, openMessage, openInterrupt, openComplete, openReopen, openAssign, patchWrite, closeWrite, refreshAndClose, onBackdrop, runWrite } = useOfficeCommands(props);
   if (!seat) return h6("aside", { className: "cid-detail", "aria-label": "员工介绍" }, h6("div", { className: "cid-empty" }, "选择一位成员查看介绍、状态与任务。"));
   var facts = [
-    h6(Fact, { key: "session", label: "会话", value: h6("code", { className: "cid-code" }, seat.id) }),
     seat.model ? h6(Fact, { key: "model", label: "模型", value: (seat.provider ? seat.provider + " / " : "") + seat.model }) : null,
     seat.tool ? h6(Fact, {
       key: "tool",
@@ -2889,7 +3045,7 @@ function DetailPane(props) {
       )
     }) : null,
     seat.error ? h6(Fact, { key: "error", label: "错误", value: h6("span", { className: "cid-error" }, seat.error) }) : null,
-    seat.since ? h6(Fact, { key: "since", label: "状态开始", value: formatClock(seat.since) }) : null,
+    seat.since ? h6(Fact, { key: "since", label: "打卡时间：", value: formatClock(seat.since) }) : null,
     seat.updatedAt ? h6(Fact, { key: "updated", label: "最后更新", value: formatClock(seat.updatedAt) }) : null
   ];
   var taskButtonTitle = actionRef ? (actionKind === "reopen" ? "task.reopen" : "task.complete") + " · " + actionRef.id + " · rev " + String(actionRef.revision) : "没有可操作的宿主任务：需要 task id 与 revision";
@@ -2990,8 +3146,8 @@ function DetailPane(props) {
 }
 
 // src/client/components/members.js
-var import_react8 = __toESM(require("react"), 1);
-var h7 = import_react8.default.createElement;
+var import_react9 = __toESM(require("react"), 1);
+var h7 = import_react9.default.createElement;
 function SeatCard(props) {
   var seat = props.seat;
   var taskLine = null;
@@ -3068,9 +3224,9 @@ function SeatBand(props) {
 }
 
 // src/client/components/page.js
-var h8 = import_react9.default.createElement;
+var h8 = import_react10.default.createElement;
 function Page(props) {
-  var scheme = import_react9.default.useSyncExternalStore(officeThemeStore.subscribe, officeThemeStore.getSnapshot, officeThemeStore.getSnapshot);
+  var scheme = import_react10.default.useSyncExternalStore(officeThemeStore.subscribe, officeThemeStore.getSnapshot, officeThemeStore.getSnapshot);
   const sessionId = props.officeSessionId;
   const { initialPreview, snapshot, validated, fetchError, activeFloor, refresh, source } = useOfficeSession(props);
   var view = useOfficeView(sessionId, props.active, !!activeFloor);
@@ -3100,6 +3256,12 @@ function Page(props) {
     view.change({ taskId: task.id, seatId: owner ? owner.id : null });
   }
   var writeGate = writeGateOf(source, snapshot || { state: "unavailable" }, activeFloor);
+  const taskCommands = useTaskCommands({ floor: activeFloor, writeGate, onRefresh: refresh, onDeleted: (id) => {
+    const patch = {};
+    if (view.value.taskId === id) patch.taskId = null;
+    if (view.value.expandedTaskId === id) patch.expandedTaskId = null;
+    view.change(patch);
+  } });
   var banner = fetchError ? "刷新失败，请重试。" : snapshot && snapshot.state === "degraded" ? "部分状态暂不可用" : "";
   return h8(
     "div",
@@ -3133,6 +3295,9 @@ function Page(props) {
         selectedSeatId: activeSeatId,
         view,
         recent,
+        writeGate,
+        onTaskAction: taskCommands.open,
+        taskActionStatus: taskCommands.last,
         detail: h8(
           CollapsibleSection,
           { key: "detail-" + activeFloor.id, sectionKey: "detail", title: "员工介绍", meta: unassignedTask ? "未指派" : activeSeat ? activeSeat.name : "", expanded: view.value.folds.detail, onToggle: view.fold },
@@ -3155,7 +3320,8 @@ function Page(props) {
           h8(SeatBand, { floor: activeFloor, selectedSeatId: activeSeatId, onSelectSeat: selectSeat })
         )
       ) : null
-    )
+    ),
+    taskCommands.write ? h8(WriteModal, { write: taskCommands.write, onConfirm: taskCommands.confirm, onCancel: taskCommands.close, onBackdrop: taskCommands.onBackdrop, onRefreshAndClose: taskCommands.refreshAndClose }) : null
   );
 }
 
@@ -3249,11 +3415,30 @@ var office_scene_default = `/* Design system: warm ivory + pale oak, jade work, 
 .cid-employee-duty>span{font-size:10px;color:var(--cid-text-muted)}
 .cid-employee-duty>p{margin:5px 0 0;font-size:12px;line-height:1.65;color:var(--cid-text-primary);overflow-wrap:anywhere}
 .cid-employee-card .cid-employee-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px;margin:0;padding-top:14px;border-top:1px dashed var(--cid-border-control)}
-.cid-employee-facts>.cid-fact:first-child{grid-column:1/-1}
 .cid-employee-facts .cid-code{background:transparent;border:0;padding:0;font-size:11px;color:var(--cid-text-secondary)}
 .cid-employee-facts .cid-fact dd{font-size:12px;line-height:1.5}
 .cid-employee-card+.cid-write{margin-top:18px}
 @container (max-width:340px){.cid-employee-identity{flex-direction:column}.cid-employee-profile{gap:12px}.cid-employee-duty{padding-left:12px}.cid-employee-identity .cid-detail-title{font-size:14px}}
+.cid-task-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.cid-task-action{min-height:36px;padding:6px 12px;border:1px solid var(--cid-border-control);border-radius:5px;background:var(--cid-surface-control);cursor:pointer}
+.cid-task-action[data-tone=primary]{color:var(--cid-accent)}
+.cid-task-action[data-tone=danger]{color:var(--cid-state-danger)}
+.cid-task-action:disabled{opacity:.5;cursor:not-allowed}
+.cid-execute-option{display:flex;align-items:center;gap:9px;min-height:44px;cursor:pointer}
+.cid-execute-option input{width:16px;height:16px;margin:0;accent-color:var(--cid-accent)}
+@container (max-width:700px){.cid-task-action{min-height:44px}}
+
+/* Cubicle badges are mounted on the partition, in the same coordinate space as the canvas. */
+.cid-current .cid-office-world{min-width:0;container-type:inline-size}
+.cid-current .cid-desk-label{box-sizing:border-box;width:17.5%;max-width:none;min-height:0;display:flex;align-items:center;gap:4px;padding:1px 5px;border-radius:1px;border:1px solid var(--cid-palette-bfd0c0);background:var(--cid-palette-f5f8f1);box-shadow:1px 1px 0 var(--cid-palette-bacbbe);line-height:1}
+.cid-current .cid-desk-label::before,.cid-current .cid-desk-label::after{content:'';width:2px;height:2px;flex:none;background:var(--cid-palette-bfd0c0)}
+.cid-current .cid-desk-label>span{min-width:0;flex:1;gap:4px}
+.cid-current .cid-desk-label b{font-size:clamp(7px,1.65cqw,14px);font-weight:600}
+.cid-current .cid-desk-label i{width:4px;height:4px}
+.cid-current .cid-desk-label small{display:none}
+.cid-current .cid-desk-label[aria-pressed=true]{border-color:var(--cid-accent);background:var(--cid-palette-e7f3e2)}
+.cid-current .cid-desk-label:hover{border-color:var(--cid-accent)}
+@container (max-width:420px){.cid-current .cid-desk-label{padding:1px 2px;gap:2px}.cid-current .cid-desk-label>span{gap:2px}.cid-current .cid-desk-label::before,.cid-current .cid-desk-label::after{display:none}}
 `;
 
 // src/client/office-theme.css
@@ -3274,8 +3459,8 @@ function installStyles() {
 }
 
 // src/client/host/plugin.js
-var h9 = import_react10.default.createElement;
-var MemoPage = import_react10.default.memo(Page);
+var h9 = import_react11.default.createElement;
+var MemoPage = import_react11.default.memo(Page);
 var inject = ["slots", "sessions", "layout", "uiWorkspace", "sidebarRightTabs", "sidebarRight", "theme"];
 function RightPane(props) {
   var info = typeof props.useTabInfo === "function" ? props.useTabInfo() : null;

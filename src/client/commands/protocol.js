@@ -6,8 +6,8 @@ export const COMMAND_PATH = COMMAND_ROUTE;
 export const COMMAND_METHOD = HOST_COMMAND_METHOD;
 export const WRITE_ACTION = COMMAND_ACTION;
 export const WRITE_LIMIT = {message:MAX_MESSAGE_LENGTH,subject:MAX_SUBJECT_LENGTH,description:MAX_DESCRIPTION_LENGTH};
-export const WRITE_TITLE = { message: "发送消息", interrupt: "打断 Agent", complete: "完成任务", reopen: "重开任务", assign: "派活" };
-export const WRITE_CONFIRM_LABEL = { message: "确认发送", interrupt: "确认打断", complete: "确认完成", reopen: "确认重开", assign: "确认创建并指派" };
+export const WRITE_TITLE = { message: "发送消息", interrupt: "打断 Agent", complete: "完成任务", reopen: "重开任务", assign: "派活", delete: "删除任务", start: "立即执行任务" };
+export const WRITE_CONFIRM_LABEL = { message: "确认发送", interrupt: "确认打断", complete: "确认完成", reopen: "确认重开", assign: "确认创建并指派", delete: "确认删除", start: "确认立即执行" };
 
 /**
  * commandId 必须通过宿主的 UUID 校验（v4/v7/v8 均可）。crypto.randomUUID
@@ -101,6 +101,7 @@ export async function postOfficeCommand(sessionId, action, args, options) {
 }
 
 export var WRITE_ERROR_COPY = {
+  "office/task-has-dependents": { title: "其他任务仍依赖此任务", hint: "请先在 DSH 处理这些依赖，或先删除依赖它的任务，再重试删除。" },
 	"office/stale-revision": { title: "任务版本已过期", hint: "快照里的 task revision 落后于任务板，宿主已拒绝这次写入。先刷新快照，等拿到最新 revision 再操作。" },
 	"office/busy": { title: "同一命令正在处理", hint: "宿主检测到重复提交（同一 commandId 仍在执行）。不会自动重发；等它结束后刷新快照再试。" },
 	"office/session-not-live": { title: "会话不在线", hint: "宿主拿不到 Lead 的实时 Agent，写动作已停止。回到会话确认它仍然打开。" },
@@ -167,6 +168,8 @@ export function describeWriteSuccess(kind, value, seatName) {
 	if (kind === "complete") return "任务已标记完成" + (taskLabel ? "：" + taskLabel : "") + (task && task.revision ? "（rev " + String(task.revision) + "）" : "");
 	if (kind === "reopen") return "任务已重开为待办（原负责人已取消）" + (taskLabel ? "：" + taskLabel : "") + (task && task.revision ? "（rev " + String(task.revision) + "）" : "");
 	if (kind === "assign") return "已派活给 " + target + (taskLabel ? "：" + taskLabel : "");
+  if (kind === "delete") return "任务已删除" + (taskLabel ? "：" + taskLabel : "") + "。删除不会打断成员当前回合。";
+  if (kind === "start") return "已向 " + target + " 发送立即执行指令" + (taskLabel ? "：" + taskLabel : "") + "。实际进度以成员状态和回复为准。";
 	return "操作成功";
 }
 
@@ -215,7 +218,7 @@ export function validateWrite(write) {
 		if (description.length > WRITE_LIMIT.description) return "任务描述超过 " + String(WRITE_LIMIT.description) + " 字符。";
 		return "";
 	}
-	if (write.kind === "complete" || write.kind === "reopen") {
+	if (["complete", "reopen", "delete", "start"].includes(write.kind)) {
 		if (!write.taskId) return "缺少 task id，无法定位任务。";
 		if (!write.taskRevision) return "缺少 expectedRevision：先刷新快照拿到任务版本。";
 		return "";
@@ -228,13 +231,15 @@ export function actionOfWrite(write) {
 	if (write.kind === "interrupt") return WRITE_ACTION.agentInterrupt;
 	if (write.kind === "complete") return WRITE_ACTION.taskComplete;
 	if (write.kind === "reopen") return WRITE_ACTION.taskReopen;
+  if (write.kind === "delete") return WRITE_ACTION.taskDelete;
+  if (write.kind === "start") return WRITE_ACTION.taskStart;
 	return "";
 }
 
 export function argsOfWrite(write) {
 	if (write.kind === "message") return { target: write.seatName, text: write.text.trim() };
 	if (write.kind === "interrupt") return { target: write.seatName };
-	if (write.kind === "complete" || write.kind === "reopen") return { taskId: write.taskId, expectedRevision: write.taskRevision };
+	if (["complete", "reopen", "delete", "start"].includes(write.kind)) return { taskId: write.taskId, expectedRevision: write.taskRevision };
 	return {};
 }
 

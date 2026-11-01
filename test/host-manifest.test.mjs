@@ -29,7 +29,7 @@ function hostSources() {
 
 test('manifest: identity and module shape', () => {
   assert.equal(manifest.name, 'dsh-cyber-dept');
-  assert.equal(manifest.version, '0.1.0');
+  assert.equal(manifest.version, '0.2.0');
   assert.equal(manifest.type, 'module');
   assert.equal(manifest.main, './index.js');
 });

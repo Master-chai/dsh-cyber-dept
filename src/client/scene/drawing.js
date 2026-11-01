@@ -1,4 +1,4 @@
-/** Canvas drawing only; keep palette and geometry identical to the baseline. */
+/** Pixel room with oak cubicles; DOM name badges attach to the rear partitions. */
 import { officeSceneColor } from '../office-theme.js';
 
 export function officeTone(state, scheme) {
@@ -28,7 +28,13 @@ export function drawOfficeRoom(ctx, layout, scheme) {
   rect(24,hg-28,112,4,'#b4c7a6');ctx.fillStyle=officeSceneColor('#778e71',scheme);ctx.font='6px Consolas, monospace';ctx.fillText('TAKE A BREATH.',42,hg-15);
   layout.seats.forEach(function(s){
     var x=s.x,y=s.y;
-    rect(x-44,y-52,89,40,'#b6c3a9');rect(x-42,y-58,84,29,'#e2cba4');line(x-41,y-58,82,'#f7e7c9');rect(x-42,y-29,84,6,'#bda680');rect(x-39,y-23,4,14,'#aa9677');rect(x+34,y-23,4,14,'#aa9677');
+    // Low upholstered rear wall and side returns make each desk a cubicle.
+    rect(x-64,y-110,128,88,'#9fb49b');rect(x-61,y-107,122,80,'#bacab3');
+    line(x-63,y-110,126,'#e8eee0');line(x-59,y-84,118,'#a6bdb5');
+    rect(x-64,y-80,4,64,'#9fb49b');rect(x+60,y-80,4,64,'#9fb49b');
+    rect(x-60,y-52,120,40,'#b6c3a9');rect(x-60,y-58,120,29,'#e2cba4');
+    line(x-59,y-58,118,'#f7e7c9');rect(x-60,y-29,120,6,'#bda680');
+    rect(x-57,y-23,4,14,'#aa9677');rect(x+53,y-23,4,14,'#aa9677');
     rect(x-24,y-83,43,27,'#15222b');rect(x-21,y-80,37,21,'#2c444d');rect(x-4,y-56,4,5,'#23313a');rect(x-10,y-51,17,3,'#344650');
     rect(x-22,y-44,31,9,'#5d6b69');for(var k=0;k<6;k++)rect(x-20+k*5,y-42,3,2,'#a9b3a8');rect(x+15,y-42,5,7,'#c1c4b1');
     rect(x+29,y-52,7,8,'#e0c69b');rect(x+35,y-50,3,4,'#e0c69b');rect(x-34,y-51,8,9,'#809c95');
@@ -43,7 +49,7 @@ export function paintOffice(ctx, layout, room, actors, membersById, images, sele
     var color=officeTone(member.state,scheme),active=activity==='typing'||activity==='reading',t=animate?actor.time:0;
     ctx.fillStyle=activity==='offline'?'#24343d':'#244b4d';ctx.fillRect(home.x-20,home.y-79,35,19);
     if(activity!=='offline') {ctx.fillStyle=color;for(var j=0;j<4;j++){ctx.globalAlpha=j===0?.85:.45;ctx.fillRect(home.x-17,home.y-76+j*4,8+((j*7+Math.floor((active?t:0)*2))%19),1);}ctx.globalAlpha=1;}
-    if(actor.id===selectedId){ctx.strokeStyle=officeSceneColor('#3c8a68',scheme);ctx.lineWidth=1;ctx.strokeRect(home.x-48,home.y-89,96,106);ctx.fillStyle=officeSceneColor('#3c8a68',scheme);ctx.fillRect(home.x-49,home.y-90,8,2);ctx.fillRect(home.x+41,home.y+16,8,2);}
+    if(actor.id===selectedId){ctx.strokeStyle=officeSceneColor('#3c8a68',scheme);ctx.lineWidth=1;ctx.strokeRect(home.x-65,home.y-111,130,96);}
     ctx.globalAlpha=.28;ctx.fillStyle=officeSceneColor('#586a4f',scheme);ctx.fillRect(x-10,y-1,20,4);ctx.globalAlpha=activity==='offline'?.55:1;
     var frame=walking?[0,1,2,1][Math.floor(t/.15)%4]:active?(activity==='reading'?5:3)+Math.floor(t/(activity==='reading'?.65:.23))%2:1;
     var dir=walking?actor.direction:0,row=dir===3?2:dir;

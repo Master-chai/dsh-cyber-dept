@@ -28,6 +28,6 @@ export function FloorPane(props) {
 			h(OfficeScene, { floor: floor, scheme: props.scheme, visible: props.visible && props.view.value.folds.office, active: props.active && props.view.value.folds.office, selectedSeatId: props.selectedSeatId, onSelectSeat: props.onSelectSeat, recent: props.recent })),
 		props.detail,
 		h(CollapsibleSection, { key: "tasks-" + floor.id, sectionKey: "tasks", title: "任务看板", meta: floor.tasks.filter(function (task) { return task.status !== "deleted"; }).length + " 项", expanded: props.view.value.folds.tasks, onToggle: props.view.fold, lazy: true },
-			h(TaskBoard, { floor: floor, onSelectTask: props.onSelectTask, selectedTaskId: props.selectedTaskId, view: props.view, recent: props.recent }))
+			h(TaskBoard, { floor: floor, onSelectTask: props.onSelectTask, selectedTaskId: props.selectedTaskId, view: props.view, recent: props.recent,writeGate:props.writeGate,onTaskAction:props.onTaskAction,taskActionStatus:props.taskActionStatus }))
 	);
 }

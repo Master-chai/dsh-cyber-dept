@@ -84,8 +84,27 @@
 .cid-employee-duty>span{font-size:10px;color:var(--cid-text-muted)}
 .cid-employee-duty>p{margin:5px 0 0;font-size:12px;line-height:1.65;color:var(--cid-text-primary);overflow-wrap:anywhere}
 .cid-employee-card .cid-employee-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px;margin:0;padding-top:14px;border-top:1px dashed var(--cid-border-control)}
-.cid-employee-facts>.cid-fact:first-child{grid-column:1/-1}
 .cid-employee-facts .cid-code{background:transparent;border:0;padding:0;font-size:11px;color:var(--cid-text-secondary)}
 .cid-employee-facts .cid-fact dd{font-size:12px;line-height:1.5}
 .cid-employee-card+.cid-write{margin-top:18px}
 @container (max-width:340px){.cid-employee-identity{flex-direction:column}.cid-employee-profile{gap:12px}.cid-employee-duty{padding-left:12px}.cid-employee-identity .cid-detail-title{font-size:14px}}
+.cid-task-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.cid-task-action{min-height:36px;padding:6px 12px;border:1px solid var(--cid-border-control);border-radius:5px;background:var(--cid-surface-control);cursor:pointer}
+.cid-task-action[data-tone=primary]{color:var(--cid-accent)}
+.cid-task-action[data-tone=danger]{color:var(--cid-state-danger)}
+.cid-task-action:disabled{opacity:.5;cursor:not-allowed}
+.cid-execute-option{display:flex;align-items:center;gap:9px;min-height:44px;cursor:pointer}
+.cid-execute-option input{width:16px;height:16px;margin:0;accent-color:var(--cid-accent)}
+@container (max-width:700px){.cid-task-action{min-height:44px}}
+
+/* Cubicle badges are mounted on the partition, in the same coordinate space as the canvas. */
+.cid-current .cid-office-world{min-width:0;container-type:inline-size}
+.cid-current .cid-desk-label{box-sizing:border-box;width:17.5%;max-width:none;min-height:0;display:flex;align-items:center;gap:4px;padding:1px 5px;border-radius:1px;border:1px solid var(--cid-palette-bfd0c0);background:var(--cid-palette-f5f8f1);box-shadow:1px 1px 0 var(--cid-palette-bacbbe);line-height:1}
+.cid-current .cid-desk-label::before,.cid-current .cid-desk-label::after{content:'';width:2px;height:2px;flex:none;background:var(--cid-palette-bfd0c0)}
+.cid-current .cid-desk-label>span{min-width:0;flex:1;gap:4px}
+.cid-current .cid-desk-label b{font-size:clamp(7px,1.65cqw,14px);font-weight:600}
+.cid-current .cid-desk-label i{width:4px;height:4px}
+.cid-current .cid-desk-label small{display:none}
+.cid-current .cid-desk-label[aria-pressed=true]{border-color:var(--cid-accent);background:var(--cid-palette-e7f3e2)}
+.cid-current .cid-desk-label:hover{border-color:var(--cid-accent)}
+@container (max-width:420px){.cid-current .cid-desk-label{padding:1px 2px;gap:2px}.cid-current .cid-desk-label>span{gap:2px}.cid-current .cid-desk-label::before,.cid-current .cid-desk-label::after{display:none}}

@@ -1,7 +1,7 @@
 import { isObject } from '../common.js';
 import { WRITE_ACTION, actionOfWrite, argsOfWrite, describeWriteError, describeWriteSuccess, postOfficeCommand } from './protocol.js';
 
-/** @typedef {'compose'|'running'|'done'|'error'|'unowned'} OperationPhase */
+/** @typedef {'compose'|'running'|'done'|'error'|'unowned'|'assigned'} OperationPhase */
 /** @typedef {{kind:string, phase:OperationPhase, floorId:string, seatName:string, taskId?:string, taskRevision?:number, taskSubject?:string, subject?:string, description?:string, text?:string}} CommandDraft */
 /** @typedef {{phase:OperationPhase, task?:object|null, value?:object, error?:object, doneMessage?:string, refreshNeeded:boolean}} CommandOutcome */
 
@@ -10,7 +10,7 @@ export async function executeCommandIntent(current, post = postOfficeCommand) {
   try {
     if (current.kind === 'assign') return await executeAssignment(current, post);
     const result = await post(current.floorId, actionOfWrite(current), argsOfWrite(current));
-    if (!result || result.ok !== true) return { phase: 'error', error: describeWriteError(result?.error), refreshNeeded: false };
+    if (!result || result.ok !== true) return { phase: 'error', error: describeWriteError(result?.error), refreshNeeded: true };
     const value = isObject(result.value) ? result.value : {};
     return { phase: 'done', value, task: value.task || null, doneMessage: describeWriteSuccess(current.kind, value, current.seatName), refreshNeeded: true };
   } catch (error) {
@@ -29,9 +29,19 @@ async function executeAssignment(current, post) {
     if (!task?.id || !task.revision) throw { code: 'office/create-unassigned', message: '任务已创建，缺少任务版本，请刷新核对。', details: {} };
     const assigned = await post(current.floorId, WRITE_ACTION.taskAssign, { taskId: task.id, expectedRevision: task.revision, owner: current.seatName });
     if (!assigned?.ok) return { phase: 'unowned', task, error: describeWriteError(assigned?.error), refreshNeeded: true };
-    return { phase: 'done', task: assigned.value?.task || task, doneMessage: '任务已指派给 ' + current.seatName + '（' + task.id + '）。如需立即处理，可发消息通知成员。', refreshNeeded: true };
+    task = assigned.value?.task || task;
   } catch (error) {
     return { phase: 'unowned', task, error: describeWriteError(error), refreshNeeded: true };
+  }
+  if (!current.executeNow) return { phase: 'done', task, doneMessage: '任务已指派给 ' + current.seatName + '（' + task.id + '）。可在任务看板点击“立即执行”。', refreshNeeded: true };
+  // Assignment has committed. Notification failure must never be reported as unassigned.
+  try {
+    const started = await post(current.floorId, WRITE_ACTION.taskStart, { taskId: task.id, expectedRevision: task.revision });
+    if (!started?.ok) throw started?.error || { code: 'office/bad-response' };
+    return { phase: 'done', task, doneMessage: '任务已指派给 ' + current.seatName + '，并已发送立即执行指令（' + task.id + '）。实际进度以成员状态和回复为准。', refreshNeeded: true };
+  } catch (error) {
+    const view = describeWriteError(error);
+    return { phase: 'assigned', task, error: view, doneMessage: '任务已指派给 ' + current.seatName + '（' + task.id + '），' + (view.deliveryUnknown ? '执行指令送达结果未知。请先查看成员会话，不要重复派活或重发。' : '执行指令发送失败。请检查成员状态后，在任务看板单独发起“立即执行”。'), refreshNeeded: true };
   }
 }
 

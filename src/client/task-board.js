@@ -1,5 +1,6 @@
 import React from 'react';
 import {isTaskBlocked,taskStatusLabel} from './common.js';
+import {taskActionProblem} from './commands/use-task-commands.js';
 const h=React.createElement;
 export function taskOwnerSeat(task, seats) {
   if (task.ownerId) return seats.find(function(seat){return seat.id===task.ownerId;}) || null;
@@ -27,6 +28,7 @@ export function TaskBoard(props) {
   var listKey=filter+'\n'+query,limit=page.key===listKey?page.count:50;
   var tabs=[['all','全部'],['in_progress','进行中'],['pending','待办'],['blocked','受阻'],['completed','已完成']];
   return h('section',{className:'cid-task-board','aria-label':'任务看板'},
+    props.taskActionStatus?h('p',{className:'cid-write-status',role:'status','data-tone':props.taskActionStatus.tone},props.taskActionStatus.text):null,
     h('div',{className:'cid-board-controls'},
       h('div',{className:'cid-task-filter-row'},
         h('div',{className:'cid-task-tabs','aria-label':'筛选任务'},tabs.map(function(tab){var count=tasks.filter(function(t){return tab[0]==='all'||(tab[0]==='blocked'?isTaskBlocked(t):t.status===tab[0]);}).length;return h('button',{key:tab[0],type:'button','aria-pressed':filter===tab[0],onClick:function(){change({filter:tab[0]});}},tab[1],h('span',null,count));})),
@@ -44,7 +46,11 @@ export function TaskBoard(props) {
           task.blockedBy&&task.blockedBy.length?h('div',null,h('b',null,'前置任务'),h('ul',null,task.blockedBy.map(function(id){var dependency=tasks.find(function(t){return t.id===id;});return h('li',{key:id},(dependency?dependency.subject:id)+' · '+(dependency?taskStatusLabel(dependency.status):'未找到'));}))):null,
           task.writeScopes&&task.writeScopes.length?h('p',null,'工作范围：'+task.writeScopes.join('、')):null,
           task.writeScopeWarnings&&task.writeScopeWarnings.length?h('p',{className:'cid-office-warning'},task.writeScopeWarnings.join('；')):null,
-          h('p',{className:'cid-muted'},owner?'已联动负责人详情，可查看或操作这项任务。':'此任务尚未关联到可用成员。')):null);
+          h('p',{className:'cid-muted'},owner?'已联动负责人详情，可查看或操作这项任务。':'此任务尚未关联到可用成员。'),
+          props.onTaskAction?h('div',{className:'cid-task-actions'},['start','delete'].map(function(kind){
+            var problem=taskActionProblem(floor,task,props.writeGate,kind);
+            return h('button',{key:kind,type:'button',className:'cid-task-action','data-task-action':kind,'data-tone':kind==='delete'?'danger':'primary',disabled:!!problem,title:problem||undefined,'aria-label':(kind==='delete'?'删除任务：':'立即执行：')+task.subject,onClick:function(){props.onTaskAction(kind,task);}},kind==='delete'?'删除任务':'立即执行');
+          })):null):null);
     })):h('div',{className:'cid-board-empty'},floor.tasksAvailable===false?'任务明细尚未同步，请稍后刷新。':tasks.length?'没有符合条件的任务':'该部门尚未创建任务。选择成员后可使用“派活”。'),
     shown.length>limit?h('button',{type:'button',className:'cid-btn',onClick:function(){if(props.view)props.view.change({taskPage:{key:listKey,count:limit+50}});else limitState[1]({key:listKey,count:limit+50});}},'显示更多（剩余 '+(shown.length-limit)+' 项）'):null);
 }

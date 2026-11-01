@@ -64,7 +64,7 @@ export function failFromError(error, action) {
   const message = typeof record?.message === 'string' ? record.message : String(error);
   const name = typeof record?.name === 'string' ? record.name : '';
   if (rawCode === 'ABORT_ERR' || rawCode === 'TEAM_WAIT_ABORTED' || name === 'AbortError' || name === 'TimeoutError') {
-    if (action === COMMAND_ACTION.messageSend) {
+    if (action === COMMAND_ACTION.messageSend || action === COMMAND_ACTION.taskStart) {
       return fail(
         OFFICE_ERROR.timeout,
         'The Team service did not acknowledge the message in time. Team messages are not de-duplicated, so it may already have been delivered; check the target before resending.',
@@ -145,6 +145,41 @@ async function executeServiceCommand(ctx, payload, options = {}) {
           action: 'reopen',
         });
         value = { task: taskSummary(task) };
+        break;
+      }
+      case COMMAND_ACTION.taskDelete: {
+        const task = await teams.updateTask(lead, {
+          taskId: args.taskId,
+          expectedRevision: args.expectedRevision,
+          action: 'delete',
+        });
+        value = { task: taskSummary(task) };
+        break;
+      }
+      case COMMAND_ACTION.taskStart: {
+        // Resolve the owner on the host. A stale browser cannot notify a former owner.
+        const task = await teams.getTask(lead, args.taskId);
+        if (!task) return fail(OFFICE_ERROR.taskNotFound, 'The task no longer exists.');
+        if (task.status === 'deleted') return fail(OFFICE_ERROR.taskDeleted, 'The task has been deleted.');
+        if (task.revision !== args.expectedRevision) return fail(OFFICE_ERROR.staleRevision, 'The task changed; refresh before requesting execution.');
+        if (task.status !== 'in_progress' || !task.ownerName) return fail(OFFICE_ERROR.invalidTransition, 'Assign an active task to a member before requesting execution.');
+        if (task.ownerName === 'lead') return fail(OFFICE_ERROR.selfMessage, 'Use the native conversation to instruct the team lead.');
+        for (const id of task.blockedBy || []) {
+          const blocker = await teams.getTask(lead, id);
+          if (!blocker || blocker.status !== 'completed') return fail(OFFICE_ERROR.taskBlocked, 'A task dependency is not complete.');
+        }
+        const latest = await teams.getTask(lead, args.taskId);
+        if (!latest || latest.revision !== task.revision || latest.ownerName !== task.ownerName || latest.status !== 'in_progress') {
+          return fail(OFFICE_ERROR.staleRevision, 'The task changed while checking its dependencies.');
+        }
+        const signal = signalOf(options);
+        signal.throwIfAborted();
+        const accepted = await teams.sendMessage(lead, {
+          target: task.ownerName,
+          content: [{ type: 'text', text: `请立即执行已指派给你的任务 ${task.id}：${task.subject}\n先读取任务的最新详情、依赖和工作范围，确认任务仍由你负责且未删除、依赖已完成，再开始执行。完成后按实际结果更新任务状态并汇报；遇到阻塞请说明原因。` }],
+          signal,
+        });
+        value = { task: taskSummary(task), target: task.ownerName, messageId: typeof accepted?.messageId === 'string' ? accepted.messageId : null };
         break;
       }
       case COMMAND_ACTION.messageSend: {

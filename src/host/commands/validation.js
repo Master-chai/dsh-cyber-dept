@@ -102,6 +102,8 @@ export function readCommandArgs(action, raw) {
       return { ok: true, args: { taskId, expectedRevision, owner } };
     }
     case COMMAND_ACTION.taskComplete:
+    case COMMAND_ACTION.taskDelete:
+    case COMMAND_ACTION.taskStart:
     case COMMAND_ACTION.taskReopen: {
       const taskId = readTaskId(raw.taskId);
       const expectedRevision = readRevision(raw.expectedRevision);

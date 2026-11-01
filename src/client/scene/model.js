@@ -28,7 +28,7 @@ export function createOfficeLayout(members) {
   var rows = Math.max(2, Math.ceil(members.length / 3));
   var layout = { width: 640, height: Math.max(384, 128 * rows + 136), seats: [], occupied: new Set(), blocked: new Set() };
   members.forEach(function (member, index) {
-    layout.seats.push({ id: member.id, x: 216 + (index % 3) * 144, y: 168 + Math.floor(index / 3) * 128, index: index });
+    layout.seats.push({ id: member.id, x: 216 + (index % 3) * 160, y: 184 + Math.floor(index / 3) * 128, index: index });
   });
   layout.seats.forEach(function(seat){for(var dx=-1;dx<=1;dx++)layout.occupied.add((Math.floor(seat.x/16)+dx)+','+Math.floor(seat.y/16));});
   var rowCount = Math.ceil(layout.height / 16);
@@ -36,7 +36,10 @@ export function createOfficeLayout(members) {
     var px = x * 16 + 8, py = y * 16 + 8;
     var wall = x < 1 || x > 38 || py < 104 || py > layout.height - 20;
     var furniture = px < 144 && (py < 176 || (py > 220 && py < 304));
-    var desk = layout.seats.some(function (seat) { return Math.abs(px-seat.x) < 48 && py >= seat.y-64 && py < seat.y-16; });
+    var desk = layout.seats.some(function (seat) {
+      var dx=Math.abs(px-seat.x);
+      return dx < 64 && py >= seat.y-110 && py < seat.y-16;
+    });
     if (wall || furniture || desk) layout.blocked.add(x + ',' + y);
   }
   return layout;
