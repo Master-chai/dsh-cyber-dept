@@ -1,0 +1,52 @@
+{
+  "name": "dsh-cyber-dept",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cyber IT Department — a pixel-office view of DSH Agent Teams with snapshot + command routes.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout"
+      ],
+      "immediately": true
+    }
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": ">=0.2.1-rc.5 <0.3.0-0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.1 <5.0.0",
+    "react": "^18.3.1"
+  },
+  "scripts": {
+    "test": "npm run build:check && npm run lint && npm run typecheck && node --test test/*.test.mjs",
+    "lint": "eslint client.js index.js src scripts",
+    "build": "node scripts/build-client.mjs",
+    "build:check": "node scripts/build-client.mjs --check",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "eslint": "10.14.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-test-renderer": "18.3.1",
+    "typescript": "7.0.2"
+  },
+  "overrides": {
+    "minimatch": "11.0.1"
+  }
+}

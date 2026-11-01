@@ -1,0 +1,32 @@
+node_modules/
+.verify*/
+.smoke*
+.preview*
+.e2e*
+.dist*
+.tokens*
+*.out
+*.err
+
+# Local captures, frozen sources and generated verification artifacts
+/.archify/
+/.refactor/
+/.playwright-cli/
+/output/
+/.publish/
+*.log
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+/.vscode/
+/.idea/
+
+# Machine-specific historical notes and the local baseline-only benchmark
+/SOURCE.md
+/docs/refactor/
+/docs/CODE_REVIEW_2026-11-01.md
+/docs/FIXES_2026-11-01.md
+/docs/review-repro-2026-11-01.mjs
+/scripts/benchmark-office.mjs

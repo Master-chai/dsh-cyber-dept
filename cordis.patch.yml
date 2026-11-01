@@ -1,0 +1,10 @@
+# dsh-cyber-dept bundle patch
+#
+# Mounted automatically when the bundle is listed in a profile's
+# dsh.profile.bundles (or installed with `dsh plugin --profile <name> add link:<path>`).
+# The host half registers the cyberAgent session projection plus the
+# /api/cyberOffice/snapshot and /api/cyberOffice/command Fetch routes; the
+# browser half (./client) renders the office. No configuration is required.
+- insert:
+    - id: cyber-dept
+      name: dsh-cyber-dept
