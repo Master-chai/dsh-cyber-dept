@@ -158,7 +158,7 @@ export function describeWriteSuccess(kind, value, seatName) {
 	var taskLabel = task ? text(task.subject) || text(task.id) : "";
 	if (kind === "message") {
 		var messageId = text(value && value.messageId);
-		return "已发送给 " + target + (messageId ? "（messageId " + clampText(messageId, 32) + "）" : "");
+		return "已发送给 " + target + (messageId ? "（messageId " + clampText(messageId, 32) + "）" : "") + "。宿主已接收，不代表成员已读或开始执行。";
 	}
 	if (kind === "interrupt") {
 		var previous = text(value && value.previousStatus);

@@ -39,10 +39,10 @@ test('office room draws daylight and night palettes without changing layout', ()
   }
   const light = paint('light'), dark = paint('dark');
   assert.equal(light.length, dark.length);
-  assert.equal(light[0], '#cbd6c7');
-  assert.equal(dark[0], '#111b25');
-  assert.ok(light.includes('#d4edf0'));
-  assert.ok(dark.includes('#355260'));
+  assert.equal(light[0], '#d3d3d3');
+  assert.equal(dark[0], '#1a1a1a');
+  assert.ok(light.every(color => /^#([0-9a-f]{2})\1\1$/i.test(color)));
+  assert.ok(dark.every(color => /^#([0-9a-f]{2})\1\1$/i.test(color)));
   assert.equal(layout.seats[0].x, 216);
 });
 

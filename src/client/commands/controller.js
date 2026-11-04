@@ -1,3 +1,4 @@
+import { officeReceipts } from './receipts.js';
 import { isObject } from '../common.js';
 import { WRITE_ACTION, actionOfWrite, argsOfWrite, describeWriteError, describeWriteSuccess, postOfficeCommand } from './protocol.js';
 
@@ -38,7 +39,7 @@ async function executeAssignment(current, post) {
   try {
     const started = await post(current.floorId, WRITE_ACTION.taskStart, { taskId: task.id, expectedRevision: task.revision });
     if (!started?.ok) throw started?.error || { code: 'office/bad-response' };
-    return { phase: 'done', task, doneMessage: '任务已指派给 ' + current.seatName + '，并已发送立即执行指令（' + task.id + '）。实际进度以成员状态和回复为准。', refreshNeeded: true };
+    return { phase: 'done', task, value: started.value, doneMessage: '任务已指派给 ' + current.seatName + '，并已发送立即执行指令（' + task.id + '）。实际进度以成员状态和回复为准。', refreshNeeded: true };
   } catch (error) {
     const view = describeWriteError(error);
     return { phase: 'assigned', task, error: view, doneMessage: '任务已指派给 ' + current.seatName + '（' + task.id + '），' + (view.deliveryUnknown ? '执行指令送达结果未知。请先查看成员会话，不要重复派活或重发。' : '执行指令发送失败。请检查成员状态后，在任务看板单独发起“立即执行”。'), refreshNeeded: true };
@@ -54,7 +55,7 @@ export function commandScope(sessionId, memberId, taskId = '') {
  * In-memory command ownership, independent of dialogs. Pending work is never evicted.
  * Settled records are bounded and expire; none are persisted or automatically retried.
  */
-export function createCommandController({ execute = executeCommandIntent, capacity = 64, ttlMs = 120000, maxPending = 256, now = Date.now } = {}) {
+export function createCommandController({ execute = executeCommandIntent, capacity = 64, ttlMs = 120000, maxPending = 256, now = Date.now, receipts = officeReceipts } = {}) {
   const records = new Map();
   const listeners = new Map();
   const notify = scope => { for (const listener of listeners.get(scope) || []) listener(records.get(scope)); };
@@ -80,11 +81,15 @@ export function createCommandController({ execute = executeCommandIntent, capaci
       const intent = { ...draft, phase: 'running', fieldError: '' };
       const record = { intent, view: intent, settledAt: null, promise: null };
       records.delete(scope); records.set(scope, record);
+      // Unique object identity prevents one scope's later operation replacing earlier receipts.
+      const receiptId = {};
+      receipts.record(receiptId, intent);
       record.promise = Promise.resolve().then(() => atCapacity
         ? { phase: 'error', error: describeWriteError({ code: 'office/busy', message: 'Too many unresolved operations' }), refreshNeeded: false }
         : execute(intent)).catch(error => ({ phase: 'error', error: describeWriteError(error), refreshNeeded: true })).then(outcome => {
         record.view = { ...intent, ...outcome };
         record.settledAt = now();
+        receipts.record(receiptId, intent, outcome);
         notify(scope); prune();
         return record.view;
       });

@@ -52,7 +52,8 @@ export function paintOffice(ctx, layout, room, actors, membersById, images, sele
     if(actor.id===selectedId){ctx.strokeStyle=officeSceneColor('#3c8a68',scheme);ctx.lineWidth=1;ctx.strokeRect(home.x-65,home.y-111,130,96);}
     ctx.globalAlpha=.28;ctx.fillStyle=officeSceneColor('#586a4f',scheme);ctx.fillRect(x-10,y-1,20,4);ctx.globalAlpha=activity==='offline'?.55:1;
     var frame=walking?[0,1,2,1][Math.floor(t/.15)%4]:active?(activity==='reading'?5:3)+Math.floor(t/(activity==='reading'?.65:.23))%2:1;
-    var dir=walking?actor.direction:0,row=dir===3?2:dir;
+    var atDesk = Math.abs(actor.x - home.x) < 1 && Math.abs(actor.y - home.y) < 1;
+    var dir=walking?actor.direction:atDesk?1:actor.direction,row=dir===3?2:dir;
     ctx.save();ctx.translate(x,y);if(dir===3)ctx.scale(-1,1);
     if(images[actor.palette])ctx.drawImage(images[actor.palette],frame*16,row*32,16,32,-12,-42,24,48);
     ctx.restore();ctx.globalAlpha=1;
