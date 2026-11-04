@@ -9,6 +9,7 @@ export function DetailPane(props) {
   const {seat,floor,write,last,gate,canWrite,floorId,taskRef,actionRef,actionKind,taskReady,taskCompleted,blockedReason,selfTarget,memberReady,messageAllowed,interruptAllowed,assignAllowed,taskAllowed,openMessage,openInterrupt,openComplete,openReopen,openAssign,patchWrite,closeWrite,refreshAndClose,onBackdrop,runWrite} = useOfficeCommands(props);
   if (!seat) return h("aside", {className:"cid-detail","aria-label":"员工介绍"},h("div",{className:"cid-empty"},"选择一位成员查看介绍、状态与任务。"));
   var facts = [
+    h(Fact, {key:"member-id", label:"成员 ID", value:seat.id}),
 		seat.model ? h(Fact, { key: "model", label: "模型", value: (seat.provider ? seat.provider + " / " : "") + seat.model }) : null,
 		seat.tool
 			? h(Fact, {
@@ -55,7 +56,7 @@ export function DetailPane(props) {
 		"aside",
 		{ className: "cid-detail", "aria-label": "员工介绍" },
 		h("div", { className: "cid-employee-card" },
-			h("div", { className: "cid-employee-brand" }, h("span", null, "赛博 IT"), h("span", null, "员工工牌")),
+			h("div", { className: "cid-employee-brand" }, h("span", null, "赛博 IT"), h("span", null, "员工介绍")),
 		h(
 			"div",
 			{ className: "cid-employee-profile" },
@@ -69,7 +70,11 @@ export function DetailPane(props) {
 			)),
 			h("div", { className: "cid-employee-duty" }, h("span", null, "职责"), h("p", null, seat.roleText || "暂未填写职责"))
 		),
-		h("dl", { className: "cid-facts cid-employee-facts" }, facts)),
+		h("section", {className:"cid-employee-current", "aria-label":"当前工作"},
+      h("span", {className:"cid-employee-kicker"}, props.taskOverride ? "选中任务" : "当前任务"),
+      h("h4", null, seat.task ? seat.task.subject : "暂无关联任务"),
+      seat.task && seat.task.description ? h("p", null, seat.task.description) : null),
+    h("dl", { className: "cid-facts cid-employee-facts" }, facts)),
 		h(
 			"section",
 			{ className: "cid-write", "aria-label": "沟通", "data-cyber-write-enabled": canWrite ? "1" : "0" },

@@ -1,5 +1,6 @@
 import React from 'react';
 import {OfficeScene} from '../office-scene.js';
+import {AttentionPanel} from './attention.js';
 import {TaskBoard} from '../task-board.js';
 const h=React.createElement;
 export function CollapsibleSection(props) {
@@ -26,6 +27,7 @@ export function FloorPane(props) {
 		{ className: "cid-floor-pane", "aria-label": props.currentOnly ? "当前会话办公室" : "楼层" },
 		h(CollapsibleSection, { key: "scene-" + floor.id, sectionKey: "office", title: "办公室", meta: floor.seats.length + " 位成员", expanded: props.view.value.folds.office, onToggle: props.view.fold },
 			h(OfficeScene, { floor: floor, scheme: props.scheme, visible: props.visible && props.view.value.folds.office, active: props.active && props.view.value.folds.office, selectedSeatId: props.selectedSeatId, onSelectSeat: props.onSelectSeat, recent: props.recent })),
+		h(AttentionPanel, { floor: floor, onSelectTask: props.onSelectTask, onSelectSeat: props.onSelectSeat, verified: props.active }),
 		props.detail,
 		h(CollapsibleSection, { key: "tasks-" + floor.id, sectionKey: "tasks", title: "任务看板", meta: floor.tasks.filter(function (task) { return task.status !== "deleted"; }).length + " 项", expanded: props.view.value.folds.tasks, onToggle: props.view.fold, lazy: true },
 			h(TaskBoard, { floor: floor, onSelectTask: props.onSelectTask, selectedTaskId: props.selectedTaskId, view: props.view, recent: props.recent,writeGate:props.writeGate,onTaskAction:props.onTaskAction,taskActionStatus:props.taskActionStatus }))

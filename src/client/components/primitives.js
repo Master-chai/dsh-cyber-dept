@@ -1,5 +1,5 @@
 import React from 'react';
-import {OFFICE_SPRITES} from '../assets.js';
+import {EMPLOYEE_PORTRAITS} from '../assets.js';
 import {officeHash} from '../scene/model.js';
 import {labelOf} from '../common.js';
 const h=React.createElement;
@@ -31,7 +31,7 @@ export function Avatar(props) {
 	return h(
 		"span",
 		{ className: "cid-avatar", "data-large": props.large === true ? "true" : "false", "aria-hidden": "true" },
-		h("span", { className: "cid-avatar-pixel", style: { backgroundImage: "url(" + OFFICE_SPRITES[officeHash(props.id || props.name || "") % 6] + ")" } }),
+		h("span", { className: "cid-avatar-portrait", style: { backgroundImage: "url(" + EMPLOYEE_PORTRAITS + ")", backgroundPosition: ((officeHash(props.id || props.name || "") % 6) % 3) * 50 + "% " + Math.floor((officeHash(props.id || props.name || "") % 6) / 3) * 100 + "%" } }),
 		h("span", { className: "cid-avatar-dot", "data-state": props.state || "idle" })
 	);
 }

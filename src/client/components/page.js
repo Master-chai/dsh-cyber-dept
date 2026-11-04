@@ -10,6 +10,7 @@ import {DetailPane} from './employee-card.js';
 import {SeatBand} from './members.js';
 import {useTaskCommands} from '../commands/use-task-commands.js';
 import {WriteModal} from './write-modal.js';
+import {PlanningPane} from './planning.js';
 const h=React.createElement;
 export function Page(props) {
 	var scheme = React.useSyncExternalStore(officeThemeStore.subscribe, officeThemeStore.getSnapshot, officeThemeStore.getSnapshot);
@@ -60,6 +61,7 @@ export function Page(props) {
 				fetchError ? "当前会话状态暂时无法读取。" : snapshot ? "当前会话尚未建立团队或任务。" : "正在读取当前会话…")),
 			activeFloor ? h("div", { className: "cid-side" },
 				h(CollapsibleSection, { sectionKey: "members", title: "团队成员", meta: activeSeats.length + " 位", expanded: view.value.folds.members, onToggle: view.fold },
-					h(SeatBand, { floor: activeFloor, selectedSeatId: activeSeatId, onSelectSeat: selectSeat }))) : null),
+					h(SeatBand, { floor: activeFloor, selectedSeatId: activeSeatId, onSelectSeat: selectSeat })),
+                h(PlanningPane, { key: activeFloor.id, floor: activeFloor, seat: activeSeat })) : null),
     taskCommands.write ? h(WriteModal,{write:taskCommands.write,onConfirm:taskCommands.confirm,onCancel:taskCommands.close,onBackdrop:taskCommands.onBackdrop,onRefreshAndClose:taskCommands.refreshAndClose}) : null);
 }

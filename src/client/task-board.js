@@ -1,5 +1,6 @@
 import React from 'react';
 import {isTaskBlocked,taskStatusLabel} from './common.js';
+import {taskEvidence} from './model/attention.js';
 import {taskActionProblem} from './commands/use-task-commands.js';
 const h=React.createElement;
 export function taskOwnerSeat(task, seats) {
@@ -28,6 +29,7 @@ export function TaskBoard(props) {
   var listKey=filter+'\n'+query,limit=page.key===listKey?page.count:50;
   var tabs=[['all','全部'],['in_progress','进行中'],['pending','待办'],['blocked','受阻'],['completed','已完成']];
   return h('section',{className:'cid-task-board','aria-label':'任务看板'},
+    h('p',{className:'cid-muted'},'“进行中”是任务看板状态，指派即可进入；不代表成员已开始执行。'),
     props.taskActionStatus?h('p',{className:'cid-write-status',role:'status','data-tone':props.taskActionStatus.tone},props.taskActionStatus.text):null,
     h('div',{className:'cid-board-controls'},
       h('div',{className:'cid-task-filter-row'},
@@ -35,6 +37,7 @@ export function TaskBoard(props) {
         h('button',{type:'button',className:'cid-task-progress','aria-pressed':filter==='completed',title:filter==='completed'?'显示全部任务':'只看已完成任务',onClick:function(){change({filter:filter==='completed'?'all':'completed'});}},h('span',null,completed+' / '+tasks.length+' 已完成'),h('progress',{value:completed,max:tasks.length||1,'aria-label':'已完成任务'}))),
       h('input',{type:'search',value:view.search,placeholder:'搜索任务或负责人','aria-label':'搜索任务或负责人',onChange:function(e){change({search:e.target.value});}})),
     shown.length?h('ul',{className:'cid-task-list'},shown.slice(0,limit).map(function(task){
+      var evidence=taskEvidence(task,floor);
       var owner=taskOwnerSeat(task,floor.seats||[]),blocked=isTaskBlocked(task),expanded=view.expandedTaskId===task.id;
       return h('li',{key:task.id,'data-task-id':task.id,'data-selected':props.selectedTaskId===task.id?'1':'0','data-recent':props.recent&&props.recent.has('task:'+task.id)?'1':'0'},
         h('button',{type:'button',className:'cid-task-row','aria-expanded':expanded,onClick:function(){change({expandedTaskId:expanded?null:task.id});if(props.onSelectTask)props.onSelectTask(task);}},
@@ -43,6 +46,8 @@ export function TaskBoard(props) {
           h('span',{className:'cid-task-owner'},owner?owner.name:task.ownerName||'未指派'),
           h('span',{className:'cid-task-state','data-status':blocked?'blocked':task.status},blocked?'受阻':taskStatusLabel(task.status)),h('span',{className:'cid-task-chevron'},expanded?'−':'+')),
         expanded?h('div',{className:'cid-task-expanded'},h('p',null,task.description||'暂无任务说明。'),
+          h('p',{className:'cid-muted'},'成员活动：'+evidence.activity+'。'+evidence.execution),
+          evidence.issues.length?h('ul',{className:'cid-task-diagnostics'},evidence.issues.map(function(issue){return h('li',{key:issue.kind},h('strong',null,issue.reason),h('p',null,'下一步：'+issue.next));})):null,
           task.blockedBy&&task.blockedBy.length?h('div',null,h('b',null,'前置任务'),h('ul',null,task.blockedBy.map(function(id){var dependency=tasks.find(function(t){return t.id===id;});return h('li',{key:id},(dependency?dependency.subject:id)+' · '+(dependency?taskStatusLabel(dependency.status):'未找到'));}))):null,
           task.writeScopes&&task.writeScopes.length?h('p',null,'工作范围：'+task.writeScopes.join('、')):null,
           task.writeScopeWarnings&&task.writeScopeWarnings.length?h('p',{className:'cid-office-warning'},task.writeScopeWarnings.join('；')):null,

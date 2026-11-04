@@ -11,7 +11,7 @@ export function createOfficeThemeStore() {
   };
 }
 export const officeThemeStore=createOfficeThemeStore();
-// Daylight room colors map to a night palette; original sprite colors stay intact.
+// Preserve room luminance and dark-theme depth; presentation is monochrome.
 var OFFICE_ROOM_DARK = {
   "#a56718": "#edbd73",
   "#be4c46": "#f08080",
@@ -65,5 +65,8 @@ var OFFICE_ROOM_DARK = {
   "#586a4f": "#050f17"
 };
 export function officeSceneColor(color, scheme) {
-  return scheme === 'dark' ? OFFICE_ROOM_DARK[color] || color : color;
+  var resolved = scheme === 'dark' ? OFFICE_ROOM_DARK[color] || color : color;
+  if (!/^#[0-9a-f]{6}$/i.test(resolved)) return resolved;
+  var gray = Math.round(parseInt(resolved.slice(1, 3), 16) * .2126 + parseInt(resolved.slice(3, 5), 16) * .7152 + parseInt(resolved.slice(5, 7), 16) * .0722).toString(16).padStart(2, '0');
+  return '#' + gray + gray + gray;
 }
