@@ -127,11 +127,13 @@ export function makeSeat(floor, member, index, context) {
 	var state = deriveSeatState(stateInput);
 	var owned = context.taskIndex ? (context.taskIndex.get("id:"+id)||[]).concat(context.taskIndex.get("name:"+member.name)||[]) : context.tasks;
 	var task = enrichTaskRef((agent && agent.task) || member.task || pickTaskForMember(owned, member, id), context.tasks, context.taskById);
-	var completedTask = null, completedCount = 0;
+	var completedTask = null, completedCount = 0, unfinishedCount = 0;
 	if (Array.isArray(owned)) {
 		for (var ci = 0; ci < owned.length; ci += 1) {
 			var ct = owned[ci];
-			if (ct && ct.status === "completed" && taskOwnedBy(ct, member, id)) { completedTask = ct; completedCount++; }
+			if (!ct || !taskOwnedBy(ct, member, id) || ct.status === "deleted") continue;
+			if (ct.status === "completed") { completedTask = ct; completedCount++; }
+			else unfinishedCount++;
 		}
 	}
 	var roleText =
@@ -148,6 +150,12 @@ export function makeSeat(floor, member, index, context) {
 		roleText: roleText,
 		phase: text(member.phase) || (agent && agent.phase) || "",
 		state: state,
+		officeRuntimeFacts: {
+			// Raw runtime signals must survive offline display precedence. Either
+			// source can observe resumed work before the snapshot catches up.
+			running: !!((summary && summary.running === true) || (status && status.running === true) || member.running === true),
+			waitingApproval: !!nativeApproval || !!approval,
+		},
 		stateFacts: deriveSeatFacts(Object.assign({}, stateInput, { task: task })),
 		stateSource: nativeApproval ? "native-approval" : agent && agent.state ? "cyberAgent" : member.state ? "snapshot" : "derived",
 		since: state === "offline" ? 0 : (agent && agent.since) || member.since || 0,
@@ -155,7 +163,17 @@ export function makeSeat(floor, member, index, context) {
 		approval: state === "offline" ? null : approval || null,
 		task: task || null,
 		completedTask: completedCount === 1 ? completedTask : null,
-                completedCount: completedCount,
+		completedCount: completedCount,
+		// Office presentation only. A past completed task or turn/end is not
+		// proof that all assigned work is finished. Keep native state untouched.
+		officeTaskFacts: {
+			completedCount: completedCount,
+			unfinishedCount: unfinishedCount,
+			completed: completedCount > 0 && unfinishedCount === 0 &&
+				(!task || task.status === "completed" || task.status === "deleted") &&
+				(!context.memberNameCounts || context.memberNameCounts.get(member.name) === 1 ||
+					owned.every(function(item){return item.ownerId || item.status === "deleted";})),
+		},
 		model: (agent && agent.model) || member.model || (summary && summary.projectionValues && summary.projectionValues.modelSelection && summary.projectionValues.modelSelection.next ? summary.projectionValues.modelSelection.next.model : "") || "",
 		provider: (agent && agent.provider) || member.provider || "",
 		error: (agent && agent.error) || member.error || "",
@@ -228,7 +246,9 @@ export function mergeFloor(floor, sessions, statusMap) {
 	var agents = collectCyberAgents(sessions, floor, members);
 	var taskIndex = new Map(), taskById = new Map();
 	tasks.forEach(function(task){taskById.set(task.id,task);var key=task.ownerId?"id:"+task.ownerId:"name:"+task.ownerName;if(!taskIndex.has(key))taskIndex.set(key,[]);taskIndex.get(key).push(task);});
-	var context = { byId: byId, statusMap: statusMap, agents: agents, tasks: tasks, taskIndex:taskIndex, taskById:taskById, live: live, floor: floor };
+	var memberNameCounts = new Map();
+	members.forEach(function(member){memberNameCounts.set(member.name,(memberNameCounts.get(member.name)||0)+1);});
+	var context = { memberNameCounts:memberNameCounts, byId: byId, statusMap: statusMap, agents: agents, tasks: tasks, taskIndex:taskIndex, taskById:taskById, live: live, floor: floor };
 	var seats = [];
 	for (var index = 0; index < members.length; index += 1) {
 		seats.push(makeSeat(floor, members[index], index, context));

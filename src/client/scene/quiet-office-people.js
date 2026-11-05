@@ -6,6 +6,7 @@ export const QUIET_ACTOR_METRICS = Object.freeze({ width: 38, height: 54, palett
 /** Hit region includes the head and chair feet; it follows the actor while walking. */
 export function quietOfficeActorHit(actor, point) {
   if(actor.phase==='break'&&actor.breakKind==='bike')return Math.abs(point.x-actor.x)<=38&&point.y>=actor.y-82&&point.y<=actor.y+14;
+  if(actor.phase==='break'&&actor.breakKind==='phone')return Math.abs(point.x-actor.x)<=24&&point.y>=actor.y-54&&point.y<=actor.y+14;
   return Math.abs(point.x-actor.x)<=QUIET_ACTOR_METRICS.width/2 && point.y>=actor.y-QUIET_ACTOR_METRICS.height && point.y<=actor.y+14;
 }
 export const QUIET_PERSON_PALETTES = [
@@ -63,6 +64,14 @@ export function drawQuietOfficePerson(ctx,x,y,options={}) {
     p(-17,-33-left,5,7,outline);p(13,-33-right,5,7,outline);
     p(-16,-33-left,3,5,skinLight);p(14,-33-right,3,5,skin);
     if(read){p(12,-37+(frame===6?1:0),4,8,skin);p(11,-37,3,2,skinLight);}
+    if(options.phone){
+      // A small bright screen and alternating thumb make desk standby distinct
+      // from typing, without changing the existing actor silhouette or palette.
+      p(10,-35,5,9,shirt);p(11,-39,4,7,skin);
+      p(13,-44,9,15,outline);p(14,-42,7,10,'#dedede');
+      p(15,-41,5,2,'#8e8e8e');p(15,-37,4,1,'#b2b2b2');
+      p(17,-31,2,1,'#a0a0a0');p(12,-35-(frame%2),4,3,skinLight);
+    }
   }else{
     p(-15,torso+3+stride,5,12,outline);p(-14,torso+3+stride,3,8,light);p(-14,torso+11+stride,3,4,skinLight);
     p(11,torso+3-stride,5,12,outline);p(12,torso+3-stride,3,8,shirt);p(12,torso+11-stride,3,4,skin);
