@@ -55,7 +55,7 @@ for(const owner of ['lead','worker'])test(`assignment uncertainty stays inspecta
   act(()=>renderer.update(React.createElement(Harness,{floor:h.floor()})));
   assert.match(JSON.stringify(renderer.toJSON()),/操作结果待核对/);
   act(()=>button(renderer,'查看任务').props.onClick());
-  assert.equal(revealed.expandedTaskId,'task-1');assert.equal(revealed.search,'');assert.equal(revealed.filter,'all');
+  assert.equal(revealed.expandedTaskId,'task-1');assert.equal(revealed.search,undefined);assert.equal(revealed.filter,'all');
   // Viewing/acknowledging the uncertain receipt cannot dispatch or create again.
   act(()=>button(renderer,'已核对，移出提醒').props.onClick());
   act(()=>button(renderer,'取消').props.onClick());

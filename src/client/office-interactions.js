@@ -7,7 +7,7 @@ export function createOfficeUiCache(capacity) {
     get: function(id) {
       var value = entries.get(id);
       if (value) { entries.delete(id); entries.set(id, value); }
-      return value || { folds: { office: true, detail: true, tasks: true, members: true }, seatId: null, taskId: null, filter: 'all', search: '', expandedTaskId: null, scrollTop: 0 };
+      return value || { folds: { office: true, detail: true, tasks: true, members: true }, seatId: null, taskId: null, filter: 'all', expandedTaskId: null, scrollTop: 0 };
     },
     set: function(id, value) {
       if (!id) return;

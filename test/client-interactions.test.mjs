@@ -98,11 +98,11 @@ test('unassigned task does not expose a different member or write controls', () 
   assert.equal(nodes(floor(tree).props.detail,n => n.type==='button').length,0);
 });
 
-test('session return restores fold/filter/selection/search/task expansion and scroll without cross-session leakage', () => {
+test('session return restores fold/filter/selection/task expansion and scroll without cross-session leakage', () => {
   const h=harness(); let tree=h.render(h.api.Page,pageProps('a'),'page-a');
   floor(tree).props.onSelectSeat('a-worker');
   floor(tree).props.view.fold('office',false);
-  floor(tree).props.view.change({filter:'completed',search:'Done',expandedTaskId:'task-2'});
+  floor(tree).props.view.change({filter:'completed',expandedTaskId:'task-2'});
   const body=byClass(tree,'cid-body');
   const scrollElement={scrollTop:420}; body.props.onScroll({target:scrollElement,currentTarget:scrollElement});
   h.unmount('page-a');
@@ -113,14 +113,14 @@ test('session return restores fold/filter/selection/search/task expansion and sc
   tree=h.render(h.api.Page,pageProps('a'),'page-a');
   assert.equal(floor(tree).props.selectedSeatId,'a-worker');
   assert.equal(floor(tree).props.view.value.filter,'completed');
-  assert.equal(floor(tree).props.view.value.search,'Done');
+  assert.equal(floor(tree).props.view.value.search,undefined);
   assert.equal(floor(tree).props.view.value.expandedTaskId,'task-2');
   assert.equal(floor(tree).props.view.value.folds.office,false);
   byClass(tree,'cid-body').props.ref.current=scrollElement; scrollElement.scrollTop=0; h.layout();
   assert.equal(scrollElement.scrollTop,420);
 });
 
-test('progress toggles completed/all and filters actual rows, preserving search', () => {
+test('progress toggles completed/all and filters actual rows without search', () => {
   const h=harness(), tasks=[{id:'one',subject:'first',status:'pending'},{id:'two',subject:'second',status:'completed'}];
   const props={floor:{tasks,seats:[]}};
   let tree=h.render(h.api.TaskBoard,props);
@@ -128,12 +128,11 @@ test('progress toggles completed/all and filters actual rows, preserving search'
   tree=h.render(h.api.TaskBoard,props);
   assert.equal(byClass(tree,'cid-task-progress').props['aria-pressed'],true);
   assert.deepEqual(nodes(tree,n=>n.props?.['data-task-id']).map(n=>n.props['data-task-id']),['two']);
-  nodes(tree,n=>n.type==='input')[0].props.onChange({target:{value:'second'}});
-  tree=h.render(h.api.TaskBoard,props);
+  assert.equal(nodes(tree,n=>n.type==='input').length,0);
   byClass(tree,'cid-task-progress').props.onClick();
   tree=h.render(h.api.TaskBoard,props);
   assert.equal(byClass(tree,'cid-task-progress').props['aria-pressed'],false);
-  assert.equal(nodes(tree,n=>n.type==='input')[0].props.value,'second');
+  assert.deepEqual(nodes(tree,n=>n.props?.['data-task-id']).map(n=>n.props['data-task-id']),['one','two']);
 });
 
 test('hover cards work for a canvas actor and keyboard focus, and Escape dismisses them', () => {
@@ -206,7 +205,7 @@ test('attention task reveal expands the board and exact row, clears hidden filte
  for(let i=0;i<2;i++){
   floor(tree).props.onSelectTask(target,{reveal:true});tree=h.render(h.api.Page,pageProps('attention-reveal'));h.layout();
   const state=floor(tree).props.view.value;
-  assert.equal(state.folds.tasks,true);assert.equal(state.filter,'all');assert.equal(state.search,'');assert.equal(state.expandedTaskId,target.id);
+  assert.equal(state.folds.tasks,true);assert.equal(state.filter,'all');assert.equal(state.expandedTaskId,target.id);
   assert.equal(floor(tree).props.selectedTaskId,target.id);
  }
  assert.equal(calls.filter(c=>c[0]==='scroll').length,2);assert.equal(calls.filter(c=>c[0]==='focus').length,2);
