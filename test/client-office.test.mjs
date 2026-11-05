@@ -138,10 +138,11 @@ test('status selector ignores unrelated updates but retains current approval cha
 });
 const member = (state, extra = {}) => ({ id: 'worker-a', name: 'Worker', state, live: true, ...extra });
 
-test('approval and unavailable offices stop scheduling animation frames', () => {
-  for (const state of ['waiting-approval', 'blocked', 'offline', 'provisioning']) {
+test('approval and blocked offices stop scheduling while offline standby animates', () => {
+  for (const state of ['waiting-approval', 'blocked', 'provisioning']) {
     assert.equal(api.officeNeedsFrames([member(state)], [{ path: [] }], 'lively', false), false);
   }
+  assert.equal(api.officeNeedsFrames([member('offline')], [{ path: [] }], 'lively', false), true);
   assert.equal(api.officeNeedsFrames([member('thinking')], [{ path: [] }], 'lively', false), true);
   assert.equal(api.officeNeedsFrames([member('idle')], [{ path: [] }], 'calm', false), false);
   assert.equal(api.officeNeedsFrames([member('idle')], [{ path: [] }], 'lively', false), true);
@@ -264,12 +265,13 @@ test('focus mode and paused time keep idle actors at their desks', () => {
     assert.equal(actor.y, actor.home.y);
   }
 });
-test('offline actor resets to its reserved desk and stops', () => {
+test('offline transition preserves the resting actor position without teleporting', () => {
   const idle = member('idle'), layout = api.createOfficeLayout([idle]);
   const actor = api.createOfficeActor(idle, layout.seats[0]);
   actor.x = 88; actor.y = 200; actor.phase = 'break';
   api.stepOfficeActor(actor, member('offline'), layout, 1, 'lively');
-  assert.equal(actor.x, actor.home.x);
-  assert.equal(actor.y, actor.home.y);
+  assert.equal(actor.x, 88);
+  assert.equal(actor.y, 200);
   assert.equal(actor.path.length, 0);
+  assert.equal(actor.activity, 'offline');
 });

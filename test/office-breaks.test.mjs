@@ -90,18 +90,18 @@ test('work and approval interrupt outbound trips and release that reservation wi
  }
 });
 
-test('offline releases either bicycle from every travel phase and preserves the other reservation',()=>{
+test('offline transition retains each bicycle reservation and does not teleport its rider',()=>{
  for(const selected of [0,1])for(const phase of ['out','break','return']){
   const {layout,actors,team}=setup(2);actors.forEach((a,i)=>ride(a,layout.bikes[i]));actors[selected].phase=phase;
   stepOfficeActor(actors[selected],{...team[selected],live:false},layout,0,'lively');
-  assert.equal(layout.bikes[selected].owner,null);assert.equal(layout.bikes[1-selected].owner,actors[1-selected].id);
-  assert.equal(actors[selected].phase,'desk');assert.equal(actors[selected].bikeId,null);assert.equal(actors[selected].breakKind,null);
-  assert.equal(actors[selected].x,actors[selected].home.x);assert.equal(actors[selected].y,actors[selected].home.y);
+  assert.equal(layout.bikes[selected].owner,actors[selected].id);assert.equal(layout.bikes[1-selected].owner,actors[1-selected].id);
+  assert.equal(actors[selected].phase,phase);assert.equal(actors[selected].bikeId,layout.bikes[selected].id);assert.equal(actors[selected].breakKind,'bike');
+  assert.equal(actors[selected].x,layout.bikes[selected].x);assert.equal(actors[selected].y,layout.bikes[selected].y);
  }
 });
 
-test('approval, work, and offline never reserve bikes; frozen or calm scenes do not start trips',()=>{
- for(const state of ['waiting-approval','blocked','error','offline','inactive','provisioning','thinking','streaming','tool-running']){
+test('approval and work never reserve bikes; frozen or calm scenes do not start trips',()=>{
+ for(const state of ['waiting-approval','blocked','error','provisioning','thinking','streaming','tool-running']){
   const {layout,actors,team}=setup(2);actors.forEach(a=>{a.wait=0;});
   for(let i=0;i<100;i++)actors.forEach((a,j)=>stepOfficeActor(a,{...team[j],state},layout,.1,'lively'));
   assert.ok(layout.bikes.every(b=>b.owner===null));assert.ok(actors.every(a=>a.phase==='desk'));
@@ -129,6 +129,6 @@ test('mixed work, offline, and recovery over 480 seconds never leave a stale bik
   const liveTeam=team.map((m,i)=>({...m,state:states[(Math.floor(frame/500)+i)%states.length]}));
   actors.forEach((a,i)=>stepOfficeActor(a,liveTeam[i],layout,.04,'lively'));invariant(layout,actors);
  }
- actors.forEach((a,i)=>stepOfficeActor(a,{...team[i],live:false},layout,0,'lively'));
+ for(let frame=0;frame<2000;frame++)actors.forEach((a,i)=>stepOfficeActor(a,{...team[i],state:'streaming'},layout,.04,'lively'));
  assert.ok(layout.bikes.every(b=>b.owner===null));assert.ok(actors.every(a=>a.bikeId===null));
 });

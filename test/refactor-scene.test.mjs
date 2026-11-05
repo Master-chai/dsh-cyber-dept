@@ -119,7 +119,7 @@ test('code-native actors do not load sprites; disposal releases observers/listen
   assert.deepEqual(statuses,[]);
 });
 
-test('working during a break returns continuously rather than teleporting, offline settles at home', () => {
+test('working during a break returns continuously and going offline does not teleport', () => {
   const member = { id: 'worker', live: true, state: 'idle' }, layout = createOfficeLayout([member]);
   const actor = createOfficeActor(member, layout.seats[0]);
   actor.wait = 0; stepOfficeActor(actor, member, layout, .01, 'lively');
@@ -128,9 +128,10 @@ test('working during a break returns continuously rather than teleporting, offli
   assert.notDeepEqual(before, { x: actor.home.x, y: actor.home.y });
   stepOfficeActor(actor, { ...member, state: 'streaming' }, layout, .04, 'lively');
   assert.equal(actor.phase, 'return'); assert.ok(Math.hypot(actor.x - before.x, actor.y - before.y) <= .04 * 38 + 1e-9);
+  const returning={x:actor.x,y:actor.y};
   stepOfficeActor(actor, { ...member, live: false }, layout, .04, 'lively');
-  assert.equal(actor.x, actor.home.x); assert.equal(actor.y, actor.home.y); assert.equal(actor.path.length, 0);
-  assert.equal(officeNeedsFrames([{ ...member, live: false }], [actor], 'lively', false), false);
+  assert.ok(Math.hypot(actor.x-returning.x,actor.y-returning.y)<=.04*38+1e-9);
+  assert.equal(officeNeedsFrames([{ ...member, live: false }], [actor], 'lively', false), true);
 });
 
 test('all twelve cubicles keep a clear route to the lounge and back without crossing partitions', () => {
@@ -192,4 +193,29 @@ test('both bike reservations survive pause and resume during outbound, riding, a
   h.frame(10040);assert.equal(h.frames.size,1);assert.notEqual(state(),before);
   assert.deepEqual(h.layout.bikes.map(b=>b.owner),owners);h.engine.dispose();
  }
+});
+
+test('offline rest retains one RAF and pauses on hidden, offscreen, folded, inactive or reduced views',()=>{
+ for(const pause of ['hidden','offscreen','folded','inactive','reduced']){
+  const h=harness({members:[{id:'worker',state:'offline',live:false,officeTaskFacts:{completed:true}}]});
+  assert.equal(h.frames.size,1);h.frame(140);const actor=h.engine.actors[0],before=actor.time;
+  if(pause==='hidden'){h.doc.hidden=true;h.listeners.get('visibilitychange')();}
+  if(pause==='offscreen')h.observer.fn([{isIntersecting:false}]);
+  if(pause==='folded'){h.update({visible:false});h.engine.wake(true);}
+  if(pause==='inactive'){h.update({active:false});h.engine.wake(true);}
+  if(pause==='reduced'){h.update({reduced:true});h.engine.wake(true);}
+  assert.equal(h.frames.size,0);h.update({},10000);h.engine.wake(true);assert.equal(actor.time,before);
+  h.doc.hidden=false;h.update({visible:true,active:true,reduced:false});h.observer.fn([{isIntersecting:true}]);h.engine.wake(true);
+  assert.equal(h.frames.size,1);assert.equal(actor.time,before);h.frame(10040);assert.ok(actor.time>before);
+  h.engine.dispose();assert.equal(h.frames.size,0);
+ }
+});
+
+test('returning offline actors settle and stop RAF when approval removes rest eligibility',()=>{
+ const h=harness({members:[{id:'worker',state:'offline',live:true}]}),actor=h.engine.actors[0];
+ actor.wait=0;h.frame(140);for(let f=0;f<40;f++)h.frame(180+f*40);
+ const before={x:actor.x,y:actor.y};h.update({members:[{id:'worker',state:'offline',live:true,stateFacts:{activity:'waiting-approval'}}]});h.engine.wake();
+ assert.ok(Math.hypot(actor.x-before.x,actor.y-before.y)<1e-8);
+ for(let f=0;f<2000&&h.frames.size;f++)h.frame(2000+f*40);
+ assert.equal(actor.phase,'desk');assert.equal(h.frames.size,0);assert.ok(h.layout.bikes.every(b=>b.owner===null));h.engine.dispose();
 });

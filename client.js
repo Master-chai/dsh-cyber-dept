@@ -760,14 +760,15 @@ function makeSeat(floor, member, index, context) {
   var state = deriveSeatState(stateInput);
   var owned = context.taskIndex ? (context.taskIndex.get("id:" + id) || []).concat(context.taskIndex.get("name:" + member.name) || []) : context.tasks;
   var task = enrichTaskRef(agent && agent.task || member.task || pickTaskForMember(owned, member, id), context.tasks, context.taskById);
-  var completedTask = null, completedCount = 0;
+  var completedTask = null, completedCount = 0, unfinishedCount = 0;
   if (Array.isArray(owned)) {
     for (var ci = 0; ci < owned.length; ci += 1) {
       var ct = owned[ci];
-      if (ct && ct.status === "completed" && taskOwnedBy(ct, member, id)) {
+      if (!ct || !taskOwnedBy(ct, member, id) || ct.status === "deleted") continue;
+      if (ct.status === "completed") {
         completedTask = ct;
         completedCount++;
-      }
+      } else unfinishedCount++;
     }
   }
   var roleText = member.description || agent && agent.roleText || (role === "lead" ? text(context.floor.roleText) || text(floor.title) : "") || summary && text(summary.displayTitle) || "";
@@ -779,6 +780,12 @@ function makeSeat(floor, member, index, context) {
     roleText,
     phase: text(member.phase) || agent && agent.phase || "",
     state,
+    officeRuntimeFacts: {
+      // Raw runtime signals must survive offline display precedence. Either
+      // source can observe resumed work before the snapshot catches up.
+      running: !!(summary && summary.running === true || status && status.running === true || member.running === true),
+      waitingApproval: !!nativeApproval || !!approval
+    },
     stateFacts: deriveSeatFacts(Object.assign({}, stateInput, { task })),
     stateSource: nativeApproval ? "native-approval" : agent && agent.state ? "cyberAgent" : member.state ? "snapshot" : "derived",
     since: state === "offline" ? 0 : agent && agent.since || member.since || 0,
@@ -787,6 +794,15 @@ function makeSeat(floor, member, index, context) {
     task: task || null,
     completedTask: completedCount === 1 ? completedTask : null,
     completedCount,
+    // Office presentation only. A past completed task or turn/end is not
+    // proof that all assigned work is finished. Keep native state untouched.
+    officeTaskFacts: {
+      completedCount,
+      unfinishedCount,
+      completed: completedCount > 0 && unfinishedCount === 0 && (!task || task.status === "completed" || task.status === "deleted") && (!context.memberNameCounts || context.memberNameCounts.get(member.name) === 1 || owned.every(function(item) {
+        return item.ownerId || item.status === "deleted";
+      }))
+    },
     model: agent && agent.model || member.model || (summary && summary.projectionValues && summary.projectionValues.modelSelection && summary.projectionValues.modelSelection.next ? summary.projectionValues.modelSelection.next.model : "") || "",
     provider: agent && agent.provider || member.provider || "",
     error: agent && agent.error || member.error || "",
@@ -858,7 +874,11 @@ function mergeFloor(floor, sessions, statusMap) {
     if (!taskIndex.has(key)) taskIndex.set(key, []);
     taskIndex.get(key).push(task);
   });
-  var context = { byId, statusMap, agents, tasks, taskIndex, taskById, live, floor };
+  var memberNameCounts = /* @__PURE__ */ new Map();
+  members.forEach(function(member) {
+    memberNameCounts.set(member.name, (memberNameCounts.get(member.name) || 0) + 1);
+  });
+  var context = { memberNameCounts, byId, statusMap, agents, tasks, taskIndex, taskById, live, floor };
   var seats = [];
   for (var index = 0; index < members.length; index += 1) {
     seats.push(makeSeat(floor, members[index], index, context));
@@ -1963,13 +1983,27 @@ function sceneActivity(member) {
   if (member.state === "done") return "done";
   return member.state === "idle" ? "idle" : "offline";
 }
+function officeRestState(member) {
+  var facts = member.stateFacts || {}, activity = facts.activity || member.state;
+  var urgent = ["waiting-approval", "blocked", "error", "provisioning", "thinking", "streaming", "tool-running"];
+  if (member.officeRuntimeFacts && (member.officeRuntimeFacts.running || member.officeRuntimeFacts.waitingApproval) || member.approval || member.error || member.phase === "failed" || member.phase === "provisioning" || urgent.includes(member.state) || urgent.includes(activity)) return "none";
+  var taskFacts = member.officeTaskFacts || {};
+  var unfinished = taskFacts.unfinishedCount > 0 || member.task && member.task.status !== "completed" && member.task.status !== "deleted";
+  var offline = member.live === false || member.state === "offline" || member.state === "inactive";
+  if (taskFacts.completed === true && !unfinished) return "completed";
+  if (offline) return unfinished ? "waiting" : "offline";
+  return member.state === "idle" || member.state === "done" ? "idle" : "none";
+}
+function officeSceneSignal(member) {
+  return [member.id, member.state, member.live, member.tool && member.tool.name, officeRestState(member)].join(":");
+}
 function officeNeedsFrames(members, actors, mode, reduced) {
   if (mode === "off" || reduced) return false;
   return actors.some(function(actor) {
     return actor.path.length > 0;
   }) || members.some(function(member) {
     var activity = sceneActivity(member);
-    return activity === "typing" || activity === "reading" || (activity === "idle" || activity === "done") && mode === "lively";
+    return activity === "typing" || activity === "reading" || officeRestState(member) !== "none" && mode === "lively";
   });
 }
 function createOfficeLayout(members) {
@@ -2046,20 +2080,10 @@ function stepOfficeActor(actor, member, layout, dt, mode) {
     return bike2.owner === actor.id;
   });
   if (reservedBike && actor.phase === "return" && Math.hypot(actor.x - reservedBike.x, actor.y - reservedBike.y) > 54) releaseOfficeBike(actor, layout);
-  if (activity === "offline") {
-    releaseOfficeBike(actor, layout);
-    actor.breakKind = null;
-    actor.x = actor.home.x;
-    actor.y = actor.home.y;
-    actor.path = [];
-    actor.phase = "desk";
-    actor.time = 0;
-    return;
-  }
   actor.time += dt;
-  var canBreak = activity === "idle" || activity === "done";
+  var rest = officeRestState(member), canBreak = rest !== "none";
   var away = Math.abs(actor.x - actor.home.x) + Math.abs(actor.y - actor.home.y) > 0.2;
-  if ((!canBreak || mode === "calm") && (actor.phase === "break" || actor.phase === "out")) {
+  if ((!canBreak || mode === "calm" || rest === "waiting" && actor.breakKind !== "phone") && (actor.phase === "break" || actor.phase === "out")) {
     actor.path = findOfficePath(layout, actor, actor.home);
     actor.phase = "return";
   }
@@ -2087,24 +2111,38 @@ function stepOfficeActor(actor, member, layout, dt, mode) {
   } else if (canBreak && mode === "lively" && dt > 0) {
     actor.wait -= dt;
     if (actor.wait <= 0 && actor.phase === "desk") {
-      var bike = (actor.seed + actor.breakCount) % 2 === 0 ? layout.bikes.find(function(spot) {
+      var kind = rest === "waiting" ? "phone" : ["bike", "coffee", "walk", "phone"][(actor.seed % 2 + actor.breakCount) % 4];
+      var bike = kind === "bike" ? layout.bikes.find(function(spot) {
         return spot.owner === null;
       }) : null;
-      var target = bike || { x: 56 + actor.seed % 5 * 16, y: 200 };
-      actor.path = findOfficePath(layout, actor, target);
-      actor.phase = actor.path.length ? "out" : "desk";
-      actor.wait = 15;
-      if (actor.path.length) {
-        actor.breakKind = bike ? "bike" : "coffee";
-        actor.breakCount++;
-        if (bike) {
-          bike.owner = actor.id;
-          actor.bikeId = bike.id;
+      if (kind === "bike" && !bike) kind = "coffee";
+      actor.breakCount++;
+      if (kind === "phone") {
+        actor.breakKind = "phone";
+        actor.phase = "break";
+        actor.wait = 7 + actor.seed % 5;
+      } else {
+        var target = bike || (kind === "walk" ? { x: [168, 312, 472, 600][actor.seed % 4], y: layout.height - 40 } : { x: 56 + actor.seed % 5 * 16, y: 200 });
+        actor.path = findOfficePath(layout, actor, target);
+        actor.phase = actor.path.length ? "out" : "desk";
+        actor.wait = 15;
+        if (actor.path.length) {
+          actor.breakKind = kind;
+          if (bike) {
+            bike.owner = actor.id;
+            actor.bikeId = bike.id;
+          }
         }
       }
     } else if (actor.wait <= 0 && actor.phase === "break") {
-      actor.path = findOfficePath(layout, actor, actor.home);
-      actor.phase = "return";
+      if (actor.breakKind === "phone") {
+        actor.phase = "desk";
+        actor.breakKind = null;
+        actor.wait = 12 + actor.seed % 17;
+      } else {
+        actor.path = findOfficePath(layout, actor, actor.home);
+        actor.phase = "return";
+      }
     }
   }
 }
@@ -2113,6 +2151,7 @@ function stepOfficeActor(actor, member, layout, dt, mode) {
 var QUIET_ACTOR_METRICS = Object.freeze({ width: 38, height: 54, palettes: 6, frames: 7, directions: 4 });
 function quietOfficeActorHit(actor, point) {
   if (actor.phase === "break" && actor.breakKind === "bike") return Math.abs(point.x - actor.x) <= 38 && point.y >= actor.y - 82 && point.y <= actor.y + 14;
+  if (actor.phase === "break" && actor.breakKind === "phone") return Math.abs(point.x - actor.x) <= 24 && point.y >= actor.y - 54 && point.y <= actor.y + 14;
   return Math.abs(point.x - actor.x) <= QUIET_ACTOR_METRICS.width / 2 && point.y >= actor.y - QUIET_ACTOR_METRICS.height && point.y <= actor.y + 14;
 }
 var QUIET_PERSON_PALETTES = [
@@ -2210,6 +2249,16 @@ function drawQuietOfficePerson(ctx, x, y, options = {}) {
     if (read) {
       p(12, -37 + (frame === 6 ? 1 : 0), 4, 8, skin);
       p(11, -37, 3, 2, skinLight);
+    }
+    if (options.phone) {
+      p(10, -35, 5, 9, shirt);
+      p(11, -39, 4, 7, skin);
+      p(13, -44, 9, 15, outline);
+      p(14, -42, 7, 10, "#dedede");
+      p(15, -41, 5, 2, "#8e8e8e");
+      p(15, -37, 4, 1, "#b2b2b2");
+      p(17, -31, 2, 1, "#a0a0a0");
+      p(12, -35 - frame % 2, 4, 3, skinLight);
     }
   } else {
     p(-15, torso + 3 + stride, 5, 12, outline);
@@ -2601,7 +2650,8 @@ function paintOffice(ctx, layout, room, actors, membersById, images, selectedId,
     var member = membersById.get(actor.id);
     if (!member) return;
     var x = Math.round(actor.x), y = Math.round(actor.y), home = actor.home, activity = actor.activity, walking = actor.path.length > 0;
-    var color = officeTone(member.state, scheme), active = activity === "typing" || activity === "reading", t = animate ? actor.time : 0;
+    var rest = officeRestState(member), completed = rest === "completed";
+    var color = officeTone(completed ? "done" : member.state, scheme), active = activity === "typing" || activity === "reading", t = animate ? actor.time : 0;
     ctx.fillStyle = activity === "offline" ? "#333333" : "#414141";
     ctx.fillRect(home.x - 23, home.y - 79, 46, 23);
     if (activity !== "offline") {
@@ -2620,17 +2670,19 @@ function paintOffice(ctx, layout, room, actors, membersById, images, selectedId,
     ctx.globalAlpha = 0.28;
     ctx.fillStyle = officeSceneColor("#586a4f", scheme);
     ctx.fillRect(x - 10, y - 1, 20, 4);
-    ctx.globalAlpha = activity === "offline" ? 0.55 : 1;
+    ctx.globalAlpha = activity === "offline" && rest === "none" ? 0.55 : 1;
     var frame = walking ? [0, 1, 2, 1][Math.floor(t / 0.15) % 4] : active ? (activity === "reading" ? 5 : 3) + Math.floor(t / (activity === "reading" ? 0.65 : 0.23)) % 2 : 1;
+    var phone = actor.phase === "break" && actor.breakKind === "phone";
+    if (phone) frame = 5 + Math.floor(t / 0.8) % 2;
     var pose = officeActorPose(actor);
     var cycling = actor.phase === "break" && actor.breakKind === "bike";
     if (cycling) drawQuietOfficeCyclist(ctx, x, y, { palette: actor.palette, time: t, animate, scheme });
     else {
-      drawQuietOfficePerson(ctx, x, y, { palette: actor.palette, direction: pose.direction, frame, seated: pose.seated, scheme });
+      drawQuietOfficePerson(ctx, x, y, { palette: actor.palette, direction: pose.direction, frame, seated: pose.seated, phone, scheme });
       if (pose.seated) drawQuietOfficeChair(ctx, x, y, { scheme });
     }
     ctx.globalAlpha = 1;
-    if (!cycling && (activity === "approval" || activity === "blocked" || activity === "done" || activity === "starting" || activity === "reading")) {
+    if (!cycling && (activity === "approval" || activity === "blocked" || completed || activity === "starting" || activity === "reading")) {
       var bx = x + 9, by = y - 48 + (animate && activity === "reading" ? Math.round(Math.sin(t * 1.6)) : 0);
       ctx.fillStyle = "#13242e";
       ctx.fillRect(bx - 1, by - 10, 23, 15);
@@ -2640,13 +2692,16 @@ function paintOffice(ctx, layout, room, actors, membersById, images, selectedId,
       ctx.fillStyle = scheme === "dark" ? "#192c32" : "#ffffff";
       ctx.font = "bold 9px Consolas,monospace";
       ctx.textAlign = "center";
-      ctx.fillText(activity === "approval" ? "?" : activity === "blocked" ? "!" : activity === "done" ? "OK" : activity === "starting" ? "+" : "···", bx + 10, by + 1);
+      ctx.fillText(activity === "approval" ? "?" : activity === "blocked" ? "!" : completed ? "OK" : activity === "starting" ? "+" : "···", bx + 10, by + 1);
       ctx.textAlign = "left";
     }
-    if (actor.phase === "break" && actor.breakKind !== "bike") {
-      ctx.fillStyle = "#e0c69b";
-      ctx.fillRect(x + 9, y - 21, 5, 6);
-      ctx.fillRect(x + 14, y - 20, 2, 3);
+    if (actor.phase === "break" && actor.breakKind === "coffee") {
+      var sip = animate && Math.floor(t / 1.8) % 2 === 0 ? 8 : 0;
+      ctx.fillStyle = "#d7d7d7";
+      ctx.fillRect(x + 9, y - 21 - sip, 6, 7);
+      ctx.fillRect(x + 15, y - 20 - sip, 2, 4);
+      ctx.fillStyle = "#666666";
+      ctx.fillRect(x + 10, y - 22 - sip, 4, 1);
     }
   });
 }
@@ -2780,9 +2835,7 @@ function OfficeScene(props) {
   var signature = members.map(function(m) {
     return m.id;
   }).join("|");
-  var sceneSignal = members.map(function(m) {
-    return [m.id, m.state, m.live, m.tool && m.tool.name].join(":");
-  }).join("|");
+  var sceneSignal = members.map(officeSceneSignal).join("|");
   var layout = React5.useMemo(function() {
     return createOfficeLayout(members);
   }, [signature]);
@@ -2823,6 +2876,10 @@ function OfficeScene(props) {
     return member.id === hoverState[0].id;
   });
   var summary = hovered ? officeHoverSummary(hovered) : null;
+  if (summary && officeRestState(hovered) === "completed") {
+    summary.state = "任务完成 · " + (hovered.state === "offline" || hovered.live === false ? "离线休息" : "休息");
+    summary.task = hovered.completedTask ? hovered.completedTask.subject + " · 已完成" : hovered.officeTaskFacts.completedCount + " 项任务已完成";
+  }
   return h2(
     "section",
     { className: "cid-office", "aria-label": "像素办公室" },
@@ -2843,8 +2900,8 @@ function OfficeScene(props) {
         }
       } }),
       layout.seats.map(function(seat, i) {
-        var member = members[i];
-        return h2("button", { type: "button", key: member.id, className: "cid-desk-label", "aria-pressed": member.id === props.selectedSeatId, "aria-describedby": hovered && hovered.id === member.id ? tooltipId : void 0, "aria-label": member.name + " · " + (member.live === false ? "休眠" : labelOf(member.state)) + " · 查看员工介绍", "data-state": member.state, "data-recent": props.recent && props.recent.has("seat:" + member.id) ? "1" : "0", style: { left: seat.x / layout.width * 100 + "%", top: (seat.y - 105) / layout.height * 100 + "%", height: 18 / layout.height * 100 + "%", "--seat-tone": officeTone(member.state, props.scheme) }, onPointerEnter: function(event) {
+        var member = members[i], completed = officeRestState(member) === "completed", status = completed ? member.state === "offline" || member.live === false ? "任务完成 · 离线休息" : "任务完成 · 休息" : member.live === false ? "休眠" : labelOf(member.state);
+        return h2("button", { type: "button", key: member.id, className: "cid-desk-label", "aria-pressed": member.id === props.selectedSeatId, "aria-describedby": hovered && hovered.id === member.id ? tooltipId : void 0, "aria-label": member.name + " · " + status + " · 查看员工介绍", "data-state": member.state, "data-recent": props.recent && props.recent.has("seat:" + member.id) ? "1" : "0", style: { left: seat.x / layout.width * 100 + "%", top: (seat.y - 105) / layout.height * 100 + "%", height: 18 / layout.height * 100 + "%", "--seat-tone": officeTone(completed ? "done" : member.state, props.scheme) }, onPointerEnter: function(event) {
           if (event.pointerType !== "touch") showHover(seat);
         }, onFocus: function() {
           showHover(seat);
@@ -2853,14 +2910,14 @@ function OfficeScene(props) {
         }, onClick: function() {
           showHover(null);
           props.onSelectSeat(member.id);
-        } }, h2("span", null, h2("i", null), h2("b", null, member.name)), h2("small", null, member.live === false ? "休眠" : labelOf(member.state)));
+        } }, h2("span", null, h2("i", null), h2("b", null, member.name)), h2("small", null, status));
       }),
-      summary ? h2("div", { id: tooltipId, role: "tooltip", className: "cid-office-tooltip", style: { left: "clamp(8px, " + hoverState[0].x / layout.width * 100 + "%, calc(100% - 228px))", top: "clamp(8px, " + (hoverState[0].y - 60) / layout.height * 100 + "%, calc(100% - 128px))" } }, h2("strong", null, summary.name + " · " + summary.state), h2("span", null, summary.task), hoverState[0].phase === "break" ? h2("small", null, hoverState[0].breakKind === "bike" ? "模拟休息 · 骑行" : "模拟休息 · 咖啡") : null, summary.tool ? h2("small", null, "工具：" + summary.tool) : null) : null
+      summary ? h2("div", { id: tooltipId, role: "tooltip", className: "cid-office-tooltip", style: { left: "clamp(8px, " + hoverState[0].x / layout.width * 100 + "%, calc(100% - 228px))", top: "clamp(8px, " + (hoverState[0].y - 60) / layout.height * 100 + "%, calc(100% - 128px))" } }, h2("strong", null, summary.name + " · " + summary.state), h2("span", null, summary.task), hoverState[0].phase === "break" ? h2("small", null, "模拟活动 · " + ({ bike: "骑行", coffee: "咖啡", walk: "散步", phone: "工位看手机" }[hoverState[0].breakKind] || "休息")) : null, summary.tool ? h2("small", null, "工具：" + summary.tool) : null) : null
     )),
     h2(
       "div",
       { className: "cid-office-footer" },
-      h2("span", null, reducedState[0] ? "已跟随系统减少动态效果" : floor.live ? "空闲或完成后可模拟喝咖啡、骑车休息 · 不代表真实疲劳" : "冷会话保留卡座，人物与屏幕静止"),
+      h2("span", null, reducedState[0] ? "已跟随系统减少动态效果" : "咖啡 · 骑行 · 散步 · 工位看手机均为模拟活动；离线不代表任务完成"),
       h2("span", null, "点击卡座工牌查看任务"),
       all.length > 12 ? h2("div", { className: "cid-scene-pages" }, h2("button", { type: "button", disabled: page === 0, onClick: function() {
         pageState[1](page - 1);
@@ -3872,14 +3929,21 @@ var base_default = ".cid-root{display:flex;flex-direction:column;height:100%;min
 var office_scene_default = `/* Design system: inherited DSH surfaces and typography; monochrome office.
    8 px rhythm; 11/12/14/18 px hierarchy; inherited DSH font for Chinese.
    Room is pixel art; labels and tasks remain native, readable DOM controls. */
-.cid-root{color-scheme:light;font-size:12px;container-type:inline-size}
+.cid-root{color-scheme:light;font-size:12px;container-type:inline-size;container-name:cid-panel}
 .cid-header{padding:16px 20px;background:var(--cid-palette-f2f5f0);gap:12px}.cid-logo{border-radius:6px;width:32px;height:32px;background:var(--cid-accent);color:var(--cid-surface-panel);font:700 12px Consolas,monospace}.cid-title{font-size:17px;letter-spacing:.5px}.cid-subtitle{margin-top:3px}.cid-body{grid-template-columns:184px minmax(0,1fr) 270px}.cid-floor-pane{padding:20px;scrollbar-gutter:stable}.cid-floor-h2{font-size:18px;font-weight:600}.cid-floor-sub{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:5px}.cid-chip{border-radius:4px;height:22px;font-size:10px}.cid-stats{gap:8px;margin-top:16px}.cid-stats .cid-chip{border:0;padding:0 10px 0 0;background:none}.cid-btn{height:32px;border-radius:5px}.cid-side{background:var(--cid-surface-panel)}.cid-seat-band{padding:16px 12px;max-height:42%;background:var(--cid-palette-f2f5f0)}.cid-band-title{font-size:12px;letter-spacing:1px}.cid-seats.cid-seats-band{grid-template-columns:1fr;gap:3px;margin-top:10px}.cid-seats-band .cid-seat{position:relative;border-color:transparent;background:transparent;border-radius:5px;padding:7px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center}.cid-seats-band .cid-seat[aria-pressed=true]{border-color:var(--cid-palette-84ac91);box-shadow:none;background:var(--cid-palette-e5f1e8)}.cid-seats-band .cid-seat-badges{justify-content:flex-end}.cid-seats-band .cid-seat-role{font-size:10px}.cid-seats-band .cid-avatar{width:28px;height:30px;border-radius:4px}.cid-state{border:0;background:var(--cid-palette-edf2ee);border-radius:4px;font-size:10px}.cid-side .cid-detail{padding:18px 16px}.cid-detail-title{font-size:15px}.cid-fact dt{font-size:11px}.cid-facts{gap:12px}.cid-code{font-size:10px}.cid-write{border-radius:6px}.cid-write-btn{min-height:32px;border-radius:5px}.cid-note{line-height:1.7}.cid-banner{border-left-width:1px;border-radius:5px}.cid-root button{transition:background-color .15s,border-color .15s}.cid-root button:disabled{cursor:not-allowed}.cid-root input,.cid-root textarea{font:inherit}.cid-root :focus-visible{outline:2px solid var(--cid-accent);outline-offset:3px}
 .cid-office{margin:16px 0 24px;border:1px solid var(--cid-palette-ced9ce);border-radius:8px;overflow:hidden;background:var(--cid-palette-f0f2eb)}.cid-office-toolbar{display:flex;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid var(--cid-palette-dce4da);background:var(--cid-palette-f7f9f4);flex-wrap:wrap}.cid-office-caption{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;flex:1;white-space:nowrap}.cid-office-caption>span:last-child{font-size:10px;color:var(--cid-palette-687d70);font-weight:400}.cid-live-light{display:inline-block;width:6px;height:6px;background:var(--cid-palette-8c9d91);border-radius:50%}.cid-live-light[data-live="1"]{background:var(--cid-palette-388761);box-shadow:0 0 0 3px var(--cid-palette-3b8b6422)}.cid-scene-pages button{background:transparent;border:0;padding:5px 9px;border-radius:3px;cursor:pointer;font-size:11px}.cid-office-scroll{overflow:auto;max-height:660px;scrollbar-color:var(--cid-palette-bacbbe) var(--cid-palette-f2f6ef)}.cid-office-world{position:relative;min-width:540px;isolation:isolate}.cid-office-world canvas{display:block;width:100%;height:100%;image-rendering:pixelated}.cid-desk-label{position:absolute;transform:translateX(-50%);width:19%;max-width:170px;border:1px solid var(--cid-palette-bfd0c0);border-radius:4px;background:var(--cid-palette-fffef5ee);padding:5px 7px;cursor:pointer;color:var(--cid-text-primary);line-height:1.25;z-index:1;text-align:left;box-shadow:0 2px 0 var(--cid-palette-d7dfd1)}.cid-desk-label>span{display:flex;gap:6px;align-items:center}.cid-desk-label i{width:5px;height:5px;flex:none;background:var(--seat-tone);border-radius:1px}.cid-desk-label b{font-size:11px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cid-desk-label small{display:block;color:var(--seat-tone);font-size:10px;margin-top:3px;padding-left:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cid-desk-label[aria-pressed=true]{border-color:var(--cid-accent);background:var(--cid-palette-e7f3e2);z-index:2}.cid-desk-label:hover{border-color:var(--cid-palette-6d9b7d);z-index:3}.cid-desk-label[data-state=offline]{background:var(--cid-palette-f0f3e9ef)}.cid-office-footer{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 14px;border-top:1px solid var(--cid-palette-dce5d9);font-size:10px;color:var(--cid-palette-62776a);background:var(--cid-palette-f5f8f1)}.cid-scene-pages{display:flex;align-items:center;gap:8px}.cid-office-warning{padding:8px 12px;color:var(--cid-state-warning);font-size:12px}.cid-task-board{padding-bottom:10px}.cid-board-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:15px}.cid-eyebrow{font:9px Consolas,monospace;letter-spacing:2px;color:var(--cid-palette-6b8574)}.cid-board-head h3{margin:4px 0 0;font-size:16px;font-weight:600;display:flex;align-items:center;gap:9px}.cid-board-head h3>span{font-size:11px;color:var(--cid-palette-6b7d70);background:var(--cid-palette-e9f0e5);padding:2px 6px;border-radius:4px}.cid-task-progress{display:flex;flex-direction:column;align-items:flex-end;gap:7px;font-size:10px;color:var(--cid-palette-607768)}.cid-task-progress progress{width:110px;height:4px;accent-color:var(--cid-accent);border:0;border-radius:0}.cid-task-progress progress::-webkit-progress-bar{background:var(--cid-palette-dce7d9)}.cid-task-progress progress::-webkit-progress-value{background:var(--cid-accent)}.cid-board-controls{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}.cid-task-tabs{display:flex;gap:3px;flex-wrap:wrap}.cid-task-tabs button{display:flex;gap:5px;padding:7px 9px;border:1px solid transparent;border-radius:4px;background:none;font-size:11px;cursor:pointer;color:var(--cid-palette-586f60)}.cid-task-tabs button span{color:var(--cid-palette-718478);font:10px Consolas,monospace}.cid-task-tabs button[aria-pressed=true]{color:var(--cid-palette-236448);border-color:var(--cid-palette-91b59a);background:var(--cid-palette-e7f2e4)}.cid-task-tabs button[aria-pressed=true] span{color:var(--cid-palette-307657)}.cid-task-list{list-style:none;padding:0;margin:0;border-top:1px solid var(--cid-palette-dce5d8)}.cid-task-list>li{border-bottom:1px solid var(--cid-palette-dce5d8)}.cid-task-list>li[data-selected="1"]{background:var(--cid-palette-edf5e8)}.cid-task-row{display:grid;grid-template-columns:24px minmax(0,1fr) 90px 52px 12px;gap:10px;align-items:center;width:100%;padding:13px 7px;text-align:left;border:0;background:transparent;cursor:pointer}.cid-task-row:hover{background:var(--cid-palette-eef4ea)}.cid-task-mark{display:flex;align-items:center;justify-content:center;width:20px;height:20px;border:1px solid var(--cid-palette-b4c7b5);border-radius:5px;color:var(--cid-palette-677e6a);font:16px Consolas,monospace}.cid-task-mark[data-status=completed]{border-color:var(--cid-palette-a5c3a4);color:var(--cid-palette-397047);background:var(--cid-palette-e9f3e4)}.cid-task-mark[data-status=in_progress]{border-color:var(--cid-palette-85b19a);color:var(--cid-palette-2c785c);background:var(--cid-palette-e2f0e6)}.cid-task-mark[data-blocked="1"]{color:var(--cid-state-warning);border-color:var(--cid-palette-d3b37c)}.cid-task-copy{display:flex;flex-direction:column;min-width:0;gap:4px}.cid-task-copy strong{font-size:12px;font-weight:500;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.cid-task-copy small{font:10px Consolas,monospace;color:var(--cid-palette-7b8c7d)}.cid-task-owner{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:11px;color:var(--cid-palette-5e7463)}.cid-task-state{font-size:10px;color:var(--cid-palette-657c6a)}.cid-task-state[data-status=in_progress]{color:var(--cid-accent)}.cid-task-state[data-status=completed]{color:var(--cid-palette-447b50)}.cid-task-state[data-status=blocked]{color:var(--cid-state-warning)}.cid-task-chevron{color:var(--cid-palette-738a76)}.cid-task-expanded{padding:0 15px 13px 41px;font-size:12px;line-height:1.7;color:var(--cid-palette-465e4c);overflow-wrap:anywhere}.cid-task-expanded p{margin:6px 0;white-space:pre-wrap}.cid-task-expanded b{font-size:11px;color:var(--cid-palette-496f55)}.cid-task-expanded ul{padding-left:18px;margin:6px 0}.cid-board-empty{padding:26px 12px;text-align:center;color:var(--cid-palette-68806e);border:1px dashed var(--cid-palette-c3d3bf);border-radius:5px;font-size:12px}
 @container (max-width:1150px){.cid-body{grid-template-columns:160px minmax(0,1fr);grid-template-areas:'rail floor' 'rail detail';grid-template-rows:minmax(340px,1fr) minmax(200px,.55fr)}.cid-side{display:grid;grid-template-columns:240px minmax(0,1fr);border-top:1px solid var(--cid-palette-d9e3d3);min-height:0}.cid-seat-band{max-height:none;border-bottom:0;border-right:1px solid var(--cid-palette-d9e3d3)}.cid-floor-pane{padding:16px}.cid-task-row{grid-template-columns:20px minmax(0,1fr) 75px 44px 10px;gap:7px}.cid-side .cid-detail{overflow:auto}}
 @container (max-width:700px){.cid-root{overflow:auto}.cid-body{display:flex;flex-direction:column;overflow:auto}.cid-floor-pane{flex:none;overflow:visible}.cid-side{flex:none;display:block}.cid-seat-band{max-height:210px;border-right:0}.cid-seats.cid-seats-band{grid-template-columns:repeat(2,minmax(0,1fr))}.cid-header{padding:12px;flex-wrap:wrap}.cid-title{font-size:15px}.cid-subtitle{max-width:250px}.cid-office-toolbar{gap:8px;padding:9px}.cid-office-caption{min-width:100%}.cid-task-row{grid-template-columns:20px minmax(0,1fr) 48px 10px}.cid-task-owner{display:none}.cid-office-footer>span:nth-child(2){display:none}.cid-floor-sub{max-width:320px}.cid-side .cid-detail{max-height:none}}
 @media(prefers-reduced-motion:reduce){.cid-root *{animation:none!important;transition:none!important}}
 .cid-avatar-pixel{display:block;width:24px;height:36px;background-size:168px 144px;background-position:-24px -6px;background-repeat:no-repeat;image-rendering:pixelated;flex:none}.cid-seats-band .cid-seat-badges .cid-chip{display:none}.cid-avatar[data-large=true] .cid-avatar-pixel{transform:scale(1.2)}.cid-office-world canvas{cursor:pointer}
-@container (max-width:700px){.cid-task-tabs button,.cid-scene-pages button,.cid-btn{min-height:44px}.cid-desk-label{min-height:44px}.cid-task-row{min-height:60px}.cid-write-btn,.cid-modal-btn{min-height:44px}}
+@container (max-width:700px){.cid-task-tabs button,.cid-scene-pages button,.cid-btn{min-height:44px}.cid-desk-label{min-height:44px}.cid-task-row{min-height:60px}.cid-modal-btn{min-height:44px}}
+/* Preserve the existing panel-based button height when the action group gains its own container. */
+@container cid-panel (max-width:700px){.cid-write-btn{min-height:44px}}
+/* Four communication actions share one row when they fit; narrow cards stay two by two. */
+.cid-write{container:cid-communication / inline-size}
+.cid-write-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+@container cid-communication (min-width:360px){.cid-write-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.cid-write-grid>.cid-write-btn[data-cyber-write=approval]{grid-column:1 / -1}
 /* The current-session office lives entirely inside the host's push sidebar. */
 .cid-current .cid-header{padding:12px;flex-wrap:nowrap;gap:8px}
 .cid-current .cid-title{font-size:15px}.cid-current .cid-subtitle{font-size:10px}

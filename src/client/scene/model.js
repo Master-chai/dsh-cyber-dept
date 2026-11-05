@@ -17,11 +17,29 @@ export function sceneActivity(member) {
   if (member.state === 'done') return 'done';
   return member.state === 'idle' ? 'idle' : 'offline';
 }
+/** Presentation never promotes offline/turn-end to a completed task. */
+export function officeRestState(member) {
+  var facts=member.stateFacts||{},activity=facts.activity||member.state;
+  var urgent=['waiting-approval','blocked','error','provisioning','thinking','streaming','tool-running'];
+  if((member.officeRuntimeFacts&&(member.officeRuntimeFacts.running||member.officeRuntimeFacts.waitingApproval))||member.approval||member.error||member.phase==='failed'||member.phase==='provisioning'||
+    urgent.includes(member.state)||urgent.includes(activity))return 'none';
+  var taskFacts=member.officeTaskFacts||{};
+  var unfinished=taskFacts.unfinishedCount>0||(member.task&&member.task.status!=='completed'&&member.task.status!=='deleted');
+  var offline=member.live===false||member.state==='offline'||member.state==='inactive';
+  if(taskFacts.completed===true&&!unfinished)return 'completed';
+  if(offline)return unfinished?'waiting':'offline';
+  return member.state==='idle'||member.state==='done'?'idle':'none';
+}
+export function officeSceneSignal(member) {
+  // Completion/assignment can change without a runtime state change. Wake the
+  // same engine instead of rebuilding actors or keeping a stale paused frame.
+  return [member.id,member.state,member.live,member.tool&&member.tool.name,officeRestState(member)].join(':');
+}
 export function officeNeedsFrames(members, actors, mode, reduced) {
   if (mode === 'off' || reduced) return false;
   return actors.some(function(actor){return actor.path.length > 0;}) || members.some(function(member){
     var activity=sceneActivity(member);
-    return activity==='typing'||activity==='reading'||((activity==='idle'||activity==='done')&&mode==='lively');
+    return activity==='typing'||activity==='reading'||(officeRestState(member)!=='none'&&mode==='lively');
   });
 }
 export function createOfficeLayout(members) {
@@ -89,11 +107,11 @@ export function stepOfficeActor(actor, member, layout, dt, mode) {
   var reservedBike=layout.bikes.find(function(bike){return bike.owner===actor.id;});
   // Keep ownership until the departing actor clears their own mat, not the other bike.
   if(reservedBike&&actor.phase==='return'&&Math.hypot(actor.x-reservedBike.x,actor.y-reservedBike.y)>54)releaseOfficeBike(actor,layout);
-  if (activity === 'offline') { releaseOfficeBike(actor,layout);actor.breakKind=null; actor.x=actor.home.x;actor.y=actor.home.y;actor.path=[];actor.phase='desk';actor.time=0;return; }
+
   actor.time += dt;
-  var canBreak = activity === 'idle'||activity === 'done';
+  var rest=officeRestState(member),canBreak=rest!=='none';
   var away = Math.abs(actor.x-actor.home.x)+Math.abs(actor.y-actor.home.y)>0.2;
-  if ((!canBreak || mode === 'calm') && (actor.phase === 'break' || actor.phase === 'out')) {
+  if ((!canBreak || mode === 'calm' || (rest==='waiting'&&actor.breakKind!=='phone')) && (actor.phase === 'break' || actor.phase === 'out')) {
     actor.path=findOfficePath(layout,actor,actor.home);actor.phase='return';
   }
   if (previousActivity !== activity && !away) actor.wait=9+actor.seed%15;
@@ -106,11 +124,22 @@ export function stepOfficeActor(actor, member, layout, dt, mode) {
   } else if (canBreak && mode === 'lively' && dt > 0) {
     actor.wait-=dt;
     if (actor.wait<=0 && actor.phase==='desk') {
-      // Stay in clear aisles. Separate resting spots avoid crowding the coffee counter.
-      var bike=(actor.seed+actor.breakCount)%2===0?layout.bikes.find(function(spot){return spot.owner===null;}):null;
-      var target=bike||{x:56+(actor.seed%5)*16,y:200};
-      actor.path=findOfficePath(layout,actor,target);actor.phase=actor.path.length?'out':'desk';actor.wait=15;
-      if(actor.path.length){actor.breakKind=bike?'bike':'coffee';actor.breakCount++;if(bike){bike.owner=actor.id;actor.bikeId=bike.id;}}
-    } else if (actor.wait<=0 && actor.phase==='break') {actor.path=findOfficePath(layout,actor,actor.home);actor.phase='return';}
+      // Stable, staggered rotation gives every resting actor all four activities.
+      // Unfinished offline work permits only desk standby, never a completion badge.
+      var kind=rest==='waiting'?'phone':['bike','coffee','walk','phone'][(actor.seed%2+actor.breakCount)%4];
+      var bike=kind==='bike'?layout.bikes.find(function(spot){return spot.owner===null;}):null;
+      if(kind==='bike'&&!bike)kind='coffee';
+      actor.breakCount++;
+      if(kind==='phone'){
+        actor.breakKind='phone';actor.phase='break';actor.wait=7+actor.seed%5;
+      }else{
+        var target=bike||(kind==='walk'?{x:[168,312,472,600][actor.seed%4],y:layout.height-40}:{x:56+(actor.seed%5)*16,y:200});
+        actor.path=findOfficePath(layout,actor,target);actor.phase=actor.path.length?'out':'desk';actor.wait=15;
+        if(actor.path.length){actor.breakKind=kind;if(bike){bike.owner=actor.id;actor.bikeId=bike.id;}}
+      }
+    } else if (actor.wait<=0 && actor.phase==='break') {
+      if(actor.breakKind==='phone'){actor.phase='desk';actor.breakKind=null;actor.wait=12+actor.seed%17;}
+      else {actor.path=findOfficePath(layout,actor,actor.home);actor.phase='return';}
+    }
   }
 }
