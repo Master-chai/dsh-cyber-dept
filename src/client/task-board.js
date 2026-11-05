@@ -12,37 +12,33 @@ export function taskRevealPatch(floor,task) {
   const rank={in_progress:0,pending:1,completed:2};
   const ordered=(floor.tasks||[]).filter(item=>item.status!=='deleted').slice().sort((a,b)=>rank[a.status]-rank[b.status]);
   const index=ordered.findIndex(item=>item.id===task.id);
-  return {filter:'all',search:'',expandedTaskId:task.id,taskPage:{key:'all\n',count:Math.max(50,index+1)}};
+  return {filter:'all',expandedTaskId:task.id,taskPage:{key:'all',count:Math.max(50,index+1)}};
 }
 export function TaskBoard(props) {
-  var filterState=React.useState('all'),searchState=React.useState(''),expandedState=React.useState(null);
+  var filterState=React.useState('all'),expandedState=React.useState(null);
   var limitState=React.useState({key:'',count:50});
-  var view=props.view?props.view.value:{filter:filterState[0],search:searchState[0],expandedTaskId:expandedState[0]};
+  var view=props.view?props.view.value:{filter:filterState[0],expandedTaskId:expandedState[0]};
   function change(patch){
     if(props.view){props.view.change(patch);return;}
     if(patch.filter!==undefined)filterState[1](patch.filter);
-    if(patch.search!==undefined)searchState[1](patch.search);
     if(patch.expandedTaskId!==undefined)expandedState[1](patch.expandedTaskId);
   }
   var floor=props.floor,tasks=(floor.tasks||[]).filter(function(t){return t.status!=='deleted';});
-  var filter=view.filter,query=view.search.trim().toLocaleLowerCase();
+  var filter=view.filter;
   var shown=tasks.filter(function(task){
-    var matches=filter==='all'||(filter==='blocked'?isTaskBlocked(task):task.status===filter);
-    return matches&&(!query||(task.subject+' '+task.ownerName+' '+task.id).toLocaleLowerCase().includes(query));
+    return filter==='all'||(filter==='blocked'?isTaskBlocked(task):task.status===filter);
   });
   var rank={in_progress:0,pending:1,completed:2};shown.sort(function(a,b){return rank[a.status]-rank[b.status];});
   var completed=tasks.filter(function(t){return t.status==='completed';}).length;
   var page=props.view?props.view.value.taskPage||{key:'',count:50}:limitState[0];
-  var listKey=filter+'\n'+query,limit=page.key===listKey?page.count:50;
+  var listKey=filter,limit=page.key===listKey?page.count:50;
   var tabs=[['all','全部'],['in_progress','进行中'],['pending','待办'],['blocked','受阻'],['completed','已完成']];
   return h('section',{className:'cid-task-board','aria-label':'任务看板'},
-    h('p',{className:'cid-muted'},'“进行中”是任务看板状态，指派即可进入；不代表成员已开始执行。'),
     props.taskActionStatus?h('p',{className:'cid-write-status',role:'status','data-tone':props.taskActionStatus.tone},props.taskActionStatus.text):null,
     h('div',{className:'cid-board-controls'},
       h('div',{className:'cid-task-filter-row'},
         h('div',{className:'cid-task-tabs','aria-label':'筛选任务'},tabs.map(function(tab){var count=tasks.filter(function(t){return tab[0]==='all'||(tab[0]==='blocked'?isTaskBlocked(t):t.status===tab[0]);}).length;return h('button',{key:tab[0],type:'button','aria-pressed':filter===tab[0],onClick:function(){change({filter:tab[0]});}},tab[1],h('span',null,count));})),
-        h('button',{type:'button',className:'cid-task-progress','aria-pressed':filter==='completed',title:filter==='completed'?'显示全部任务':'只看已完成任务',onClick:function(){change({filter:filter==='completed'?'all':'completed'});}},h('span',null,completed+' / '+tasks.length+' 已完成'),h('progress',{value:completed,max:tasks.length||1,'aria-label':'已完成任务'}))),
-      h('input',{type:'search',value:view.search,placeholder:'搜索任务或负责人','aria-label':'搜索任务或负责人',onChange:function(e){change({search:e.target.value});}})),
+        h('button',{type:'button',className:'cid-task-progress','aria-pressed':filter==='completed',title:filter==='completed'?'显示全部任务':'只看已完成任务',onClick:function(){change({filter:filter==='completed'?'all':'completed'});}},h('span',null,completed+' / '+tasks.length+' 已完成'),h('progress',{value:completed,max:tasks.length||1,'aria-label':'已完成任务'})))),
     shown.length?h('ul',{className:'cid-task-list'},shown.slice(0,limit).map(function(task){
       var evidence=taskEvidence(task,floor);
       var owner=taskOwnerSeat(task,floor.seats||[]),blocked=isTaskBlocked(task),expanded=view.expandedTaskId===task.id;
