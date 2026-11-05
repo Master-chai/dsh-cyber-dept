@@ -37,4 +37,4 @@ SOFTWARE.
 
 ## Original employee portraits
 
-`src/client/assets/employee-portraits.webp` contains six AI-generated fictional adult portraits created for this plugin, not copied from Kimi or photographs of actual staff. The 3 × 2 atlas is embedded locally; no runtime image service is contacted. WebP encoding is lossless, verified against the generated PNG pixels. Original pixel-office sprite attribution above remains unchanged.
+`src/client/assets/employee-portraits.webp` contains six AI-generated fictional adult black-and-white pixel-art portraits (512 × 512 pixels per atlas cell) created for this plugin, not copied from Kimi or photographs of actual staff. The 3 × 2 atlas is embedded locally; no runtime image service is contacted. WebP encoding is lossless, verified against the generated PNG pixels. Original pixel-office sprite attribution above remains unchanged.

@@ -83,13 +83,15 @@ export function createCommandController({ execute = executeCommandIntent, capaci
       records.delete(scope); records.set(scope, record);
       // Unique object identity prevents one scope's later operation replacing earlier receipts.
       const receiptId = {};
-      receipts.record(receiptId, intent);
-      record.promise = Promise.resolve().then(() => atCapacity
+      const receiptAccepted = receipts.record(receiptId, intent) !== false;
+      record.promise = Promise.resolve().then(() => !receiptAccepted
+        ? { phase: 'error', error: {code:'office/receipt-capacity',title:'本页未核对操作过多',hint:'新的请求未发送。请先在原生会话核对待处理操作，再明确移出本地提醒；刷新页面只清空本地记录，不会取消或证明旧操作成功。',deliveryUnknown:false}, refreshNeeded:false }
+        : atCapacity
         ? { phase: 'error', error: describeWriteError({ code: 'office/busy', message: 'Too many unresolved operations' }), refreshNeeded: false }
         : execute(intent)).catch(error => ({ phase: 'error', error: describeWriteError(error), refreshNeeded: true })).then(outcome => {
         record.view = { ...intent, ...outcome };
         record.settledAt = now();
-        receipts.record(receiptId, intent, outcome);
+        if (receiptAccepted) receipts.record(receiptId, intent, outcome);
         notify(scope); prune();
         return record.view;
       });

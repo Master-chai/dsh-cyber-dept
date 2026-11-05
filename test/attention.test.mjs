@@ -65,3 +65,54 @@ test('attention panel observes receipts, excludes other floors, preserves unknow
   act(()=>store.record({}, {floorId:'floor',kind:'start'},{phase:'error',error:{title:'UNKNOWN',deliveryUnknown:true}}));assert.match(text(),/操作结果待核对/);
   act(()=>renderer.unmount());
 });
+test('attention panel is absent when healthy, including ordinary pending and successful receipts',()=>{
+ const store=createReceiptStore();let renderer;
+ act(()=>{renderer=TestRenderer.create(React.createElement(AttentionPanel,{floor,controller:store}));});
+ assert.equal(renderer.toJSON(),null);
+ const record={};act(()=>store.record(record,{floorId:'floor',kind:'message'}));assert.equal(renderer.toJSON(),null);
+ act(()=>store.record(record,{floorId:'floor',kind:'message'},{phase:'done',value:{messageId:'m'}}));assert.equal(renderer.toJSON(),null);
+ act(()=>renderer.unmount());
+});
+test('attention panel automatically appears for new issues and hides when snapshot resolves them',()=>{
+ const store=createReceiptStore();let renderer;
+ act(()=>{renderer=TestRenderer.create(React.createElement(AttentionPanel,{floor,controller:store}));});assert.equal(renderer.toJSON(),null);
+ act(()=>renderer.update(React.createElement(AttentionPanel,{floor:{...floor,seats:[{...seat,state:'waiting-approval'}]},controller:store})));assert.match(JSON.stringify(renderer.toJSON()),/等待审批/);
+ act(()=>renderer.root.findAllByType('button').find(n=>n.children.join('').startsWith('本页操作回执')).props.onClick());
+ act(()=>renderer.update(React.createElement(AttentionPanel,{floor,controller:store})));assert.equal(renderer.toJSON(),null);
+ act(()=>renderer.update(React.createElement(AttentionPanel,{floor:{...floor,seats:[{...seat,state:'error'}]},controller:store})));assert.equal(renderer.root.findAllByProps({className:'cid-receipts'}).length,0);
+ act(()=>renderer.unmount());
+});
+test('partial and delivery-unknown receipts cannot be hidden as routine successes',()=>{
+ assert.equal(attentionItems(floor,[{id:'unknown',phase:'done',unknown:true,summary:'verify'}]).length,1);
+ const store=createReceiptStore();let renderer;
+ act(()=>{renderer=TestRenderer.create(React.createElement(AttentionPanel,{floor,controller:store}));});
+ act(()=>store.record({}, {floorId:'floor',kind:'start'},{phase:'error',error:{title:'unknown',deliveryUnknown:true}}));
+ assert.match(JSON.stringify(renderer.toJSON()),/操作结果待核对/);
+ act(()=>renderer.update(React.createElement(AttentionPanel,{floor:{...floor,id:'other'},controller:store})));assert.equal(renderer.toJSON(),null);
+ act(()=>renderer.unmount());
+});
+test('successes in other floors never evict unresolved receipts; explicit acknowledgment releases them',()=>{
+ const store=createReceiptStore({capacity:2,unresolvedCapacity:2}),id={};
+ store.record(id,{floorId:'floor',kind:'start'},{phase:'error',error:{title:'Unknown',deliveryUnknown:true}});
+ for(let i=0;i<70;i++)store.record({}, {floorId:'other',kind:'message'},{phase:'done'});
+ assert.equal(attentionItems(floor,store.list('floor')).length,1);assert.equal(store.list('other').length,2);
+ assert.equal(store.acknowledge(id,'other'),false);assert.equal(attentionItems(floor,store.list('floor')).length,1);
+ assert.equal(store.acknowledge(id,'floor'),true);assert.equal(attentionItems(floor,store.list('floor')).length,0);
+});
+test('unresolved capacity blocks new network execution and remains bounded until checked',async()=>{
+ const receipts=createReceiptStore({capacity:2,unresolvedCapacity:1});const id={};let calls=0;
+ receipts.record(id,{floorId:'floor',kind:'start'},{phase:'error',error:{title:'Unknown',deliveryUnknown:true}});
+ const controller=createCommandController({receipts,execute:()=>{calls++;return {phase:'done'};}});
+ const result=await controller.run('new',{floorId:'other',kind:'message'});
+ assert.equal(calls,0);assert.equal(result.error.code,'office/receipt-capacity');assert.equal(receipts.list('floor').length,1);assert.equal(receipts.list('other').length,0);
+ receipts.acknowledge(id,'floor');await controller.run('again',{floorId:'other',kind:'message'});assert.equal(calls,1);
+});
+test('acknowledging an unknown outcome requires confirmation and does not resend',()=>{
+ const store=createReceiptStore();store.record({}, {floorId:'floor',kind:'start'},{phase:'error',error:{title:'Unknown',deliveryUnknown:true}});let renderer;
+ act(()=>{renderer=TestRenderer.create(React.createElement(AttentionPanel,{floor,controller:store}));});
+ const btn=label=>renderer.root.findAllByType('button').find(n=>n.children.join('')===label);
+ act(()=>btn('已核对，移出提醒').props.onClick());assert.equal(attentionItems(floor,store.list('floor')).length,1);
+ act(()=>btn('取消').props.onClick());assert.equal(attentionItems(floor,store.list('floor')).length,1);
+ act(()=>btn('已核对，移出提醒').props.onClick());act(()=>btn('确认已核对').props.onClick());assert.equal(renderer.toJSON(),null);
+ act(()=>renderer.unmount());
+});

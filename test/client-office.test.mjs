@@ -34,7 +34,7 @@ test('office room draws daylight and night palettes without changing layout', ()
   const layout = api.createOfficeLayout([{ id: 'a' }]);
   function paint(scheme) {
     const colors = [];
-    api.drawOfficeRoom({ fillRect() {}, fillText() {}, set fillStyle(value) { colors.push(value); } }, layout, scheme);
+    api.drawOfficeRoom({ save() {}, restore() {}, translate() {}, fillRect() {}, fillText() {}, set fillStyle(value) { colors.push(value); } }, layout, scheme);
     return colors;
   }
   const light = paint('light'), dark = paint('dark');
@@ -138,8 +138,8 @@ test('status selector ignores unrelated updates but retains current approval cha
 });
 const member = (state, extra = {}) => ({ id: 'worker-a', name: 'Worker', state, live: true, ...extra });
 
-test('completed and approval-only offices stop scheduling animation frames', () => {
-  for (const state of ['done', 'waiting-approval', 'blocked', 'offline', 'provisioning']) {
+test('approval and unavailable offices stop scheduling animation frames', () => {
+  for (const state of ['waiting-approval', 'blocked', 'offline', 'provisioning']) {
     assert.equal(api.officeNeedsFrames([member(state)], [{ path: [] }], 'lively', false), false);
   }
   assert.equal(api.officeNeedsFrames([member('thinking')], [{ path: [] }], 'lively', false), true);
@@ -193,7 +193,7 @@ test('reading tools, writing tools and streaming use distinct activity poses', (
   assert.equal(api.sceneActivity(member('tool-running', { tool: { name: 'run_code' } })), 'typing');
   assert.equal(api.sceneActivity(member('streaming')), 'typing');
 });
-test('approval, blocked, error, completed and offline never become idle breaks', () => {
+test('approval, blocked, error, completed and offline retain distinct state labels', () => {
   for (const [state, activity] of [['waiting-approval', 'approval'], ['blocked', 'blocked'], ['error', 'blocked'], ['done', 'done'], ['offline', 'offline'], ['provisioning', 'starting']]) {
     assert.equal(api.sceneActivity(member(state)), activity);
   }
