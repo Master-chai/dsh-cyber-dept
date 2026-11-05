@@ -42,7 +42,7 @@ export function TaskBoard(props) {
       return h('li',{key:task.id,'data-task-id':task.id,'data-selected':props.selectedTaskId===task.id?'1':'0','data-recent':props.recent&&props.recent.has('task:'+task.id)?'1':'0'},
         h('button',{type:'button',className:'cid-task-row','aria-expanded':expanded,onClick:function(){change({expandedTaskId:expanded?null:task.id});if(props.onSelectTask)props.onSelectTask(task);}},
           h('span',{className:'cid-task-mark','data-status':task.status,'data-blocked':blocked?'1':'0'},task.status==='completed'?'✓':blocked?'!':task.status==='in_progress'?'›':'·'),
-          h('span',{className:'cid-task-copy'},h('strong',null,task.subject),h('small',null,task.id+(blocked?' · 等待依赖完成':''))),
+          h('span',{className:'cid-task-copy'},h('span',{className:'cid-task-heading'},h('strong',{title:task.subject},task.subject),h('small',{className:'cid-task-id',title:task.id},task.id)),blocked?h('small',null,'等待依赖完成'):null),
           h('span',{className:'cid-task-owner'},owner?owner.name:task.ownerName||'未指派'),
           h('span',{className:'cid-task-state','data-status':blocked?'blocked':task.status},blocked?'受阻':taskStatusLabel(task.status)),h('span',{className:'cid-task-chevron'},expanded?'−':'+')),
         expanded?h('div',{className:'cid-task-expanded'},h('p',null,task.description||'暂无任务说明。'),

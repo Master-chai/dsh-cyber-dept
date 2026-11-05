@@ -12,17 +12,17 @@ function recordingContext(trace = []) {
   });
 }
 
-// Approved monochrome backdrop snapshots, recorded once after the palette change.
+// Monochrome backdrop snapshots after adding the requested bicycle lounge.
 // Geometry and animation invariants are covered independently below.
 const roomTraces = [
-  ['light', 2, 'f36f690d9f747bc0eed7f4b7b682d863135d707d8e895b3e408c1d49836444d2'],
-  ['light', 9, 'f839ea361ce49d113aed5843feec6be6e6040cc1306cef50f463dddaa4e61748'],
-  ['light', 12, 'dbab175e019ac912bdc198165d82fe8a05886e61b502ca8f959fc92f40399d03'],
-  ['dark', 2, '63ac7efbda5c38617de47fac4efcc9bd1d3599c170f057eb9a98db0b9426c761'],
-  ['dark', 9, 'e5d17de2df2afed95ea541ee54179b490b6b96047343cc621cb608fbfc22176b'],
-  ['dark', 12, '88ac35331f5e56c2917f4a82a4d55aed8a41caf12981505d4442cdeaad893f82'],
+  ['light', 2, 'ed0a2125ec22489c2f11edc6adecb7a666be39bb7addf1f97ead3a619decd1c0'],
+  ['light', 9, '159715c18a436815c1dc572777e59c3f808fb46647885b7fd367948c2c55607e'],
+  ['light', 12, 'eb8bb1870c4c04f4defb01a9b5f0d51f64b98e37669c98ae8a016230abcdf492'],
+  ['dark', 2, 'dcfeea2c3f403c1a8094c2e18e1dbc7c209f31c79b3b62e8a5b643843bf422a9'],
+  ['dark', 9, '61d6367f82b1f7f186f2f29811ca44c72100f0b0966006c042ad0c8461bf7a64'],
+  ['dark', 12, '590cd89b24a40b19f708bd6f44ff53a20abd30dc36bad9e464ee1a8204ad4b8a'],
 ];
-for (const [scheme, count, expected] of roomTraces) test(`room backdrop preserves baseline: ${scheme}, ${count} seats`, () => {
+for (const [scheme, count, expected] of roomTraces) test(`room backdrop includes bicycle lounge: ${scheme}, ${count} seats`, () => {
   const trace = [];
   const members = Array.from({ length: count }, (_, i) => ({ id: 'agent-' + i }));
   drawOfficeRoom(recordingContext(trace), { ...createOfficeLayout(members), seats: [] }, scheme);
@@ -110,13 +110,13 @@ test('reduced motion and readonly previews render once without advancing actors'
   h.engine.dispose();
 });
 
-test('disposal ignores late sprite completion and releases observers/listeners/RAF', async () => {
-  let resolve; const statuses = [];
-  const h = harness({ images: () => new Promise(done => resolve = done), status: value => statuses.push(value) });
-  h.engine.dispose(); resolve([]); await Promise.resolve(); await Promise.resolve();
-  h.engine.wake();
-  assert.equal(h.frames.size, 0); assert.equal(h.listeners.size, 0); assert.equal(h.observer.connected, false);
-  assert.deepEqual(statuses, []);
+test('code-native actors do not load sprites; disposal releases observers/listeners/RAF', () => {
+  let loads=0; const statuses=[];
+  const h=harness({images:()=>{loads++;throw new Error('unused legacy asset');},status:value=>statuses.push(value)});
+  assert.equal(loads,0);
+  h.engine.dispose();h.engine.wake();
+  assert.equal(h.frames.size,0);assert.equal(h.listeners.size,0);assert.equal(h.observer.connected,false);
+  assert.deepEqual(statuses,[]);
 });
 
 test('working during a break returns continuously rather than teleporting, offline settles at home', () => {

@@ -6,7 +6,7 @@
 import { createOfficeActor, stepOfficeActor, officeNeedsFrames } from './model.js';
 import { drawOfficeRoom, paintOffice } from './drawing.js';
 
-export function createOfficeEngine({ canvas, layout, getCurrent, loadImages, onImageStatus = () => {}, environment }) {
+export function createOfficeEngine({ canvas, layout, getCurrent, environment }) {
   const env = environment || {
     document,
     now: () => performance.now(),
@@ -21,7 +21,7 @@ export function createOfficeEngine({ canvas, layout, getCurrent, loadImages, onI
   let roomScheme = getCurrent().scheme;
   drawOfficeRoom(room.getContext('2d'), layout, roomScheme);
   const actors = getCurrent().members.map((member, index) => createOfficeActor(member, layout.seats[index]));
-  let disposed = false, raf = 0, last = 0, visible = true, images = [], lastPaint = 0;
+  let disposed = false, raf = 0, last = 0, visible = true, lastPaint = 0;
 
   function render(now) {
     if (disposed) return;
@@ -34,7 +34,7 @@ export function createOfficeEngine({ canvas, layout, getCurrent, loadImages, onI
       const member = byId.get(actor.id);
       if (member) stepOfficeActor(actor, member, layout, animate ? dt : 0, current.mode);
     });
-    paintOffice(ctx, layout, room, actors, byId, images, current.selectedId, animate, current.scheme);
+    paintOffice(ctx, layout, room, actors, byId, [], current.selectedId, animate, current.scheme);
     canvas.dataset.actorCount = String(actors.length);
     canvas.dataset.motion = current.active && officeNeedsFrames(current.members, actors, current.mode, current.reduced) ? 'running' : 'paused';
   }
@@ -71,12 +71,6 @@ export function createOfficeEngine({ canvas, layout, getCurrent, loadImages, onI
   }) : null;
   if (observer) observer.observe(canvas);
   env.document.addEventListener('visibilitychange', visibilityChanged);
-  loadImages().then(loaded => {
-    if (disposed) return;
-    images = loaded;
-    onImageStatus(false);
-    wake();
-  }).catch(() => { if (!disposed) onImageStatus(true); });
   wake();
 
   return {

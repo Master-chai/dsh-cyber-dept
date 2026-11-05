@@ -10,7 +10,6 @@ import {DetailPane} from './employee-card.js';
 import {SeatBand} from './members.js';
 import {useTaskCommands} from '../commands/use-task-commands.js';
 import {WriteModal} from './write-modal.js';
-import {PlanningPane} from './planning.js';
 const h=React.createElement;
 export function Page(props) {
 	var scheme = React.useSyncExternalStore(officeThemeStore.subscribe, officeThemeStore.getSnapshot, officeThemeStore.getSnapshot);
@@ -56,12 +55,11 @@ export function Page(props) {
 					unassignedTask ? h("div", { className: "cid-detail" }, h("h3", null, selectedTask.subject), h("p", null, selectedTask.description || "暂无任务说明。"), h("p", { className: "cid-muted" }, "此任务尚未关联到可用成员。可先选择成员，再用“派活”选择这项现有任务。")) :
 					h(DetailPane, { seat: activeSeat, taskOverride: selectedTask && taskOwnerSeat(selectedTask, activeSeats) === activeSeat ? selectedTask : null, floor: activeFloor, writeGate: writeGate, onRefresh: refresh })),
 				onSelectSeat: selectSeat, selectedTaskId: selectedTaskId,
-				onSelectTask: selectTask
+				onSelectTask: selectTask,
+                trailing: h("div", { className: "cid-side" },
+                    h(CollapsibleSection, { sectionKey: "members", title: "团队成员", meta: activeSeats.length + " 位", expanded: view.value.folds.members, onToggle: view.fold },
+                        h(SeatBand, { floor: activeFloor, selectedSeatId: activeSeatId, onSelectSeat: selectSeat })))
 			}) : h("section", { className: "cid-floor-pane" }, h("div", { className: "cid-empty", role: "status" },
-				fetchError ? "当前会话状态暂时无法读取。" : snapshot ? "当前会话尚未建立团队或任务。" : "正在读取当前会话…")),
-			activeFloor ? h("div", { className: "cid-side" },
-				h(CollapsibleSection, { sectionKey: "members", title: "团队成员", meta: activeSeats.length + " 位", expanded: view.value.folds.members, onToggle: view.fold },
-					h(SeatBand, { floor: activeFloor, selectedSeatId: activeSeatId, onSelectSeat: selectSeat })),
-                h(PlanningPane, { key: activeFloor.id, floor: activeFloor, seat: activeSeat })) : null),
+				fetchError ? "当前会话状态暂时无法读取。" : snapshot ? "当前会话尚未建立团队或任务。" : "正在读取当前会话…"))),
     taskCommands.write ? h(WriteModal,{write:taskCommands.write,onConfirm:taskCommands.confirm,onCancel:taskCommands.close,onBackdrop:taskCommands.onBackdrop,onRefreshAndClose:taskCommands.refreshAndClose}) : null);
 }

@@ -34,7 +34,8 @@ export function attentionItems(floor,receipts=[]) {
     if(issues.length)items.push({id:'task:'+task.id,taskId:task.id,title:task.subject,reason:issues.map(issue=>issue.reason).join(' '),next:issues.map(issue=>issue.next).join(' ')});
   }
   for(const receipt of receipts){
-    if(!['error','unowned','assigned'].includes(receipt.phase))continue;
+    if(receipt.acknowledged)continue;
+    if(!receipt.unknown&&!['error','unowned','assigned'].includes(receipt.phase))continue;
     items.push({id:receipt.id,taskId:receipt.taskId,title:receipt.unknown?'操作结果待核对':'操作需要处理',reason:receipt.summary,next:receipt.hint||'查看成员会话及任务归属后再决定下一步；不要重复创建任务。',receipt:true});
   }
   return items;
