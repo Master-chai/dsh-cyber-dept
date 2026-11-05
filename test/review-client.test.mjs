@@ -46,10 +46,11 @@ test('pending tasks cannot be completed; ambiguous completed tasks require expli
   const snap=api.normalizeSnapshot({floors:[{id:'root',live:true,members:[{id:'worker',name:'Worker',status:'idle'}],tasks:[task,{...task,id:'task-8'}]}]});
   const floor=api.mergeFloor(snap.floors[0],{},null);assert.equal(floor.seats[0].completedTask,null);
 });
-test('existing-task assignment sends only task.assign, without creating a duplicate',async()=>{
+test('existing-task assignment with execution unchecked sends only task.assign, without creating a duplicate',async()=>{
   const calls=[];const api=load(async(_url,options)=>{const body=JSON.parse(options.body);calls.push(body.payload);return response(body,{task:{...task,status:'in_progress'}});});
   const r=render(api,{floor:{...props.floor,tasks:[{...task,status:'pending',ownerName:'',ready:true}]}});
   act(()=>button(r,'assign').props.onClick());act(()=>r.root.findByType('select').props.onChange({target:{value:task.id}}));
+  act(()=>r.root.findByProps({'data-cyber-field':'assign-execute-now'}).props.onChange({target:{checked:false}}));
   await act(async()=>{await r.root.findByProps({'data-cyber-confirm':'1'}).props.onClick();});
   assert.equal(calls.length,1);assert.equal(calls[0].action,'task.assign');assert.deepEqual(calls[0].args,{taskId:'task-7',expectedRevision:4,owner:'Worker'});close(r);
 });
@@ -108,4 +109,14 @@ test('large task boards mount 50 rows initially and reveal subsequent rows on de
   assert.equal(r.root.findAll(n=>n.type==='li'&&n.props['data-task-id']).length,50);
   act(()=>r.root.findAllByType('button').find(b=>typeof b.props.children==='string'&&b.props.children.includes('显示更多')).props.onClick());
   assert.equal(r.root.findAll(n=>n.type==='li'&&n.props['data-task-id']).length,100);close(r);
+});
+
+
+test('approval button opens the native Session and displays refusal without answering the approval',async()=>{
+ const api=load();let calls=0;const dispose=api.setRuntimeContext({uiWorkspace:{openSession(){calls++;throw Error('native navigation refused');}}});
+ const r=render(api,{seat:{...seat,approval:{toolName:'bash',reason:'Review command'}}});
+ try{
+  await act(async()=>{await button(r,'approval').props.onClick();});
+  assert.equal(calls,1);assert.match(r.root.findByProps({role:'alert'}).children.join(''),/native navigation refused/);
+ }finally{close(r);dispose();}
 });

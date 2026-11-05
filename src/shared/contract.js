@@ -157,6 +157,7 @@ export const COMMAND_ACTIONS = Object.freeze(Object.keys(ACTION_SPEC));
 export const OFFICE_ERROR = Object.freeze({
   teamUnavailable: 'office/team-unavailable',
   sessionNotLive: 'office/session-not-live',
+  executionUnavailable: 'office/execution-unavailable',
   busy: 'office/busy',
   invalidArgument: 'office/invalid-argument',
   leadRequired: 'office/lead-required',

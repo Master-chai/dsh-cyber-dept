@@ -195,3 +195,30 @@ test('background notices expire once and re-entering a hidden session establishe
   assert.equal(h.render(Notices,{floor:next,enabled:true}).length,0);
   assert.equal(h.timerCount(),0);
 });
+
+test('attention task reveal expands the board and exact row, clears hidden filters, scrolls and focuses on repeated clicks',()=>{
+ const h=harness();let tree=h.render(h.api.Page,pageProps('attention-reveal'));
+ const props=floor(tree).props,target=props.floor.tasks[0],calls=[];
+ props.view.fold('tasks',false);props.view.change({filter:'completed',search:'unrelated',expandedTaskId:null});
+ // Host ids may contain selector syntax; matching attributes avoids interpolating them.
+ const row={getAttribute:()=>target.id,scrollIntoView:options=>calls.push(['scroll',options]),querySelector:()=>({focus:options=>calls.push(['focus',options])})};
+ byClass(tree,'cid-body').props.ref.current={querySelectorAll:()=>[row],scrollTop:0};
+ for(let i=0;i<2;i++){
+  floor(tree).props.onSelectTask(target,{reveal:true});tree=h.render(h.api.Page,pageProps('attention-reveal'));h.layout();
+  const state=floor(tree).props.view.value;
+  assert.equal(state.folds.tasks,true);assert.equal(state.filter,'all');assert.equal(state.search,'');assert.equal(state.expandedTaskId,target.id);
+  assert.equal(floor(tree).props.selectedTaskId,target.id);
+ }
+ assert.equal(calls.filter(c=>c[0]==='scroll').length,2);assert.equal(calls.filter(c=>c[0]==='focus').length,2);
+});
+
+test('attention reveal includes tasks past page 50 and does not change ordinary task-row toggle behavior',()=>{
+ const h=harness(),tasks=Array.from({length:75},(_,i)=>({id:'task-'+i,subject:'Task '+i,status:'pending'})),target=tasks[74];
+ const patch=h.api.taskRevealPatch({tasks},target);assert.equal(patch.taskPage.count,75);
+ const props={floor:{tasks,seats:[]},view:{value:patch,change:value=>Object.assign(patch,value)}};
+ let tree=h.render(h.api.TaskBoard,props);
+ assert.equal(nodes(tree,n=>n.props?.['data-task-id']).length,75);
+ const selected=nodes(tree,n=>n.props?.['data-task-id']==='task-74')[0];assert.ok(byClass(selected,'cid-task-expanded'));
+ byClass(selected,'cid-task-row').props.onClick();tree=h.render(h.api.TaskBoard,props);
+ assert.equal(nodes(tree,n=>n.props?.className==='cid-task-expanded').length,0);
+});

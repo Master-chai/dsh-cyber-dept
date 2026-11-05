@@ -7,6 +7,13 @@ export function taskOwnerSeat(task, seats) {
   if (task.ownerId) return seats.find(function(seat){return seat.id===task.ownerId;}) || null;
   return task.ownerName ? seats.find(function(seat){return seat.name===task.ownerName;}) || null : null;
 }
+/** Reveal one existing task through the existing board, including filtered/paged rows. */
+export function taskRevealPatch(floor,task) {
+  const rank={in_progress:0,pending:1,completed:2};
+  const ordered=(floor.tasks||[]).filter(item=>item.status!=='deleted').slice().sort((a,b)=>rank[a.status]-rank[b.status]);
+  const index=ordered.findIndex(item=>item.id===task.id);
+  return {filter:'all',search:'',expandedTaskId:task.id,taskPage:{key:'all\n',count:Math.max(50,index+1)}};
+}
 export function TaskBoard(props) {
   var filterState=React.useState('all'),searchState=React.useState(''),expandedState=React.useState(null);
   var limitState=React.useState({key:'',count:50});

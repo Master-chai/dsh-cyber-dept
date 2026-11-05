@@ -2,14 +2,14 @@ import React from 'react';
 import {Avatar,StateBadge,Fact} from './primitives.js';
 import {WriteButton,WriteModal} from './write-modal.js';
 import {useOfficeCommands} from '../commands/use-commands.js';
-import {openNativeSession} from '../host/navigation.js';
+import {useNativeSession} from '../host/use-native-session.js';
 import {labelOf,roleLabelOf,taskStatusLabel,formatClock,isTaskBlocked} from '../common.js';
 const h=React.createElement;
 export function DetailPane(props) {
+  const navigation=useNativeSession((props.floor?.id||'')+':'+(props.seat?.id||''));
   const {seat,floor,write,last,gate,canWrite,floorId,taskRef,actionRef,actionKind,taskReady,taskCompleted,blockedReason,selfTarget,memberReady,messageAllowed,interruptAllowed,assignAllowed,taskAllowed,openMessage,openInterrupt,openComplete,openReopen,openAssign,patchWrite,closeWrite,refreshAndClose,onBackdrop,runWrite} = useOfficeCommands(props);
   if (!seat) return h("aside", {className:"cid-detail","aria-label":"员工介绍"},h("div",{className:"cid-empty"},"选择一位成员查看介绍、状态与任务。"));
   var facts = [
-    h(Fact, {key:"member-id", label:"成员 ID", value:seat.id}),
 		seat.model ? h(Fact, { key: "model", label: "模型", value: (seat.provider ? seat.provider + " / " : "") + seat.model }) : null,
 		seat.tool
 			? h(Fact, {
@@ -122,10 +122,12 @@ export function DetailPane(props) {
 							label: "去处理审批",
 							disabled: false,
 							title: "打开该 Agent 的原生会话审批面板；办公室不注册第二个 answerer",
-							onClick: function () { openNativeSession(seat.id); },
+							onClick: function () { return navigation.open(seat); },
 					  })
 					: null
 			),
+			navigation.opening ? h("p", {className:"cid-write-status", role:"status"}, "正在打开原生会话…") : null,
+			navigation.error ? h("p", {className:"cid-write-status", "data-tone":"error", role:"alert"}, navigation.error) : null,
 			last ? h("p", { className: "cid-write-status", "data-tone": last.tone, role: "status", "data-cyber-write-status": "1" }, last.text) : null,
 			!canWrite && gate.reason ? h("p", { className: "cid-write-note", "data-cyber-write-blocked": gate.reason }, "只读原因：" + gate.reason) : null,
 			seat.approval

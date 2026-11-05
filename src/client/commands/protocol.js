@@ -101,6 +101,7 @@ export async function postOfficeCommand(sessionId, action, args, options) {
 }
 
 export var WRITE_ERROR_COPY = {
+  "office/execution-unavailable": { title: "宿主执行接口不兼容", hint: "执行指令未发送。请核对 DSH 版本并更新插件；已指派的任务会保留。" },
   "office/task-has-dependents": { title: "其他任务仍依赖此任务", hint: "请先在 DSH 处理这些依赖，或先删除依赖它的任务，再重试删除。" },
 	"office/stale-revision": { title: "任务版本已过期", hint: "快照里的 task revision 落后于任务板，宿主已拒绝这次写入。先刷新快照，等拿到最新 revision 再操作。" },
 	"office/busy": { title: "同一命令正在处理", hint: "宿主检测到重复提交（同一 commandId 仍在执行）。不会自动重发；等它结束后刷新快照再试。" },

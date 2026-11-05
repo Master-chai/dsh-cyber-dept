@@ -146,16 +146,26 @@
 
 .cid-receipts ul{list-style:none;margin:0;padding:0}.cid-receipts li{padding:10px 0;border-top:1px solid var(--cid-border-subtle)}.cid-receipts small{overflow-wrap:anywhere}
 
-/* Desktop task controls: 44px → 22px, without scaling text or affecting dialogs. */
+/* Requested visual sizes: status filters ≈ 2/3 of 44px; detail actions 1/2.
+   Keep the two groups separate from progress, pagination and dialog controls. */
+.cid-current .cid-task-board .cid-task-tabs button{--cid-task-control-height:30px}
+.cid-current .cid-task-board .cid-task-action{--cid-task-control-height:22px}
 .cid-current .cid-task-board .cid-task-tabs button,
-.cid-current .cid-task-board .cid-task-action,
+.cid-current .cid-task-board .cid-task-action{position:relative;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;min-width:44px;min-height:var(--cid-task-control-height);height:var(--cid-task-control-height);min-block-size:var(--cid-task-control-height);block-size:var(--cid-task-control-height);line-height:16px;padding:0 8px;font-size:11px;white-space:nowrap;flex:none}
 .cid-current .cid-task-board>.cid-btn,
 .cid-current .cid-task-board .cid-task-progress{min-height:22px;height:auto;line-height:16px;padding:2px 8px;font-size:11px}
 .cid-current .cid-task-board .cid-task-tabs{gap:4px}
 .cid-current .cid-floor-pane>.cid-side{padding:0;margin:12px 0}
 .cid-current .cid-floor-pane>.cid-side>.cid-fold{margin-top:0}
-/* Keep physical touch targets usable, independently of the compact desktop layout. */
-@media(any-pointer:coarse){.cid-current .cid-task-board .cid-task-tabs button,.cid-current .cid-task-board .cid-task-action,.cid-current .cid-task-board>.cid-btn,.cid-current .cid-task-board .cid-task-progress{min-height:44px;padding:6px 8px}}
+/* Touch (including hybrid laptops) retains the compact visual size. A transparent
+   hit area extends to 44px; row gaps keep adjacent touch targets from overlapping. */
+@media(any-pointer:coarse){
+  .cid-current .cid-task-board .cid-task-tabs button::after,
+  .cid-current .cid-task-board .cid-task-action::after{content:"";position:absolute;top:50%;left:-1px;right:-1px;height:44px;transform:translateY(-50%)}
+  .cid-current .cid-task-board .cid-task-tabs{row-gap:18px}
+  .cid-current .cid-task-board .cid-task-actions{row-gap:24px}
+  .cid-current .cid-task-board>.cid-btn,.cid-current .cid-task-board .cid-task-progress{min-height:44px;padding:6px 8px}
+}
 
 .cid-seats-band .cid-avatar{width:30px;height:30px}
 

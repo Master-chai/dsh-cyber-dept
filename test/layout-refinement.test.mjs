@@ -11,17 +11,18 @@ function pane(folds={office:true,tasks:true}){
 }
 test('task board leads; employee and members precede the office at the bottom',()=>{
  const tree=pane();assert.equal(tree.children[0].props.sectionKey,'tasks');
- assert.equal(tree.children[2].marker,'employee');assert.equal(tree.children[3].marker,'members');
- assert.equal(tree.children.at(-1).props.sectionKey,'office');assert.equal(tree.children.length,5);
+ assert.equal(tree.children[1].marker,'employee');assert.equal(tree.children[2].marker,'members');
+ assert.equal(tree.children.at(-1).props.sectionKey,'office');assert.equal(tree.children.length,4);
 });
 test('moving the office keeps fold visibility and animation activity gating',()=>{
  const expanded=pane().children.at(-1);assert.equal(expanded.props.key,'scene-demo');assert.equal(expanded.children[0].props.active,true);
  const collapsed=pane({office:false,tasks:true}).children.at(-1);assert.equal(collapsed.children[0].props.visible,false);assert.equal(collapsed.children[0].props.active,false);
  assert.equal(collapsed.props.expanded,false);
 });
-test('conditional attention panel preserves the command safety mechanisms',()=>{
+test('removed attention region preserves the command safety mechanisms',()=>{
  const production=readFileSync(new URL('../client.js',import.meta.url),'utf8');
- assert.match(production,/需要你处理/);
+ assert.doesNotMatch(production,/需要你处理/);
+ assert.doesNotMatch(readFileSync(new URL('../src/client/components/sections.js',import.meta.url),'utf8'),/AttentionPanel|cid-attention/);
  assert.match(production,/送达结果未知|送达情况未知|送达未知/);
  assert.match(production,/确认立即执行/);
  const source=readFileSync(new URL('../src/client/commands/controller.js',import.meta.url),'utf8');assert.match(source,/officeReceipts/);

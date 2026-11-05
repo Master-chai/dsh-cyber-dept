@@ -86,7 +86,7 @@ export function useOfficeCommands(props) {
   }
   const openMessage = () => open({ kind: 'message', text: '' });
   const openInterrupt = () => open({ kind: 'interrupt', seatState: seat?.state });
-  const openAssign = () => open({ kind: 'assign', subject: '', description: '', executeNow: false, executeAllowed: facts.messageAllowed });
+  const openAssign = () => open({ kind: 'assign', subject: '', description: '', executeNow: true, executeAllowed: facts.assignAllowed });
   function openTask(kind) {
     if (!actionRef?.id || !actionRef.revision) return;
     open({ kind, taskId: actionRef.id, taskRevision: actionRef.revision, taskSubject: actionRef.subject });
@@ -104,7 +104,6 @@ export function useOfficeCommands(props) {
       (draft.kind === 'message' && !latest.messageAllowed) ||
       (draft.kind === 'interrupt' && !latest.interruptAllowed) ||
       (draft.kind === 'assign' && !latest.assignAllowed) ||
-      (draft.kind === 'assign' && draft.executeNow && !latest.messageAllowed) ||
       (['complete', 'reopen'].includes(draft.kind) && !latest.taskAllowed)) {
       setWrite({ ...draft, fieldError: '目标或状态已变化，请关闭后重新选择。' }); return;
     }

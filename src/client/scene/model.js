@@ -26,7 +26,7 @@ export function officeNeedsFrames(members, actors, mode, reduced) {
 }
 export function createOfficeLayout(members) {
   var rows = Math.max(2, Math.ceil(members.length / 3));
-  var layout = { width: 640, height: Math.max(448, 128 * rows + 136), seats: [], occupied: new Set(), blocked: new Set() };
+  var layout = { width: 640, height: Math.max(560, 128 * rows + 136), seats: [], occupied: new Set(), blocked: new Set() };
   members.forEach(function (member, index) {
     layout.seats.push({ id: member.id, x: 216 + (index % 3) * 160, y: 184 + Math.floor(index / 3) * 128, index: index });
   });
@@ -42,9 +42,15 @@ export function createOfficeLayout(members) {
     });
     if (wall || furniture || desk) layout.blocked.add(x + ',' + y);
   }
-  layout.bike={x:88,y:392,owner:null};
-  // Keep the bicycle footprint clear of through traffic; only its reserved target is entered.
-  for(var bx=3;bx<=7;bx++)for(var by=23;by<=24;by++)layout.occupied.add(bx+','+by);
+  layout.bikes = [
+    { id:'bike-1', x:88, y:392, owner:null },
+    { id:'bike-2', x:88, y:504, owner:null },
+  ];
+  // Separate mats and approach aisles keep both riders clear of desks and each other.
+  layout.bikes.forEach(function(bike){
+    var row = Math.floor(bike.y / 16);
+    for(var bx=3;bx<=7;bx++)for(var by=row-1;by<=row;by++)layout.occupied.add(bx+','+by);
+  });
   return layout;
 }
 export function findOfficePath(layout, from, to) {
@@ -71,13 +77,19 @@ export function findOfficePath(layout, from, to) {
 }
 export function createOfficeActor(member, home) {
   var seed = officeHash(member.id);
-  return { id:member.id, x:home.x, y:home.y, home:home, palette:seed%6, direction:0, path:[], activity:sceneActivity(member), phase:'desk', time:seed%7, wait:9+seed%15, seed:seed,breakKind:null,breakCount:0 };
+  return { id:member.id, x:home.x, y:home.y, home:home, palette:seed%6, direction:0, path:[], activity:sceneActivity(member), phase:'desk', time:seed%7, wait:9+seed%15, seed:seed,breakKind:null,bikeId:null,breakCount:0 };
+}
+export function releaseOfficeBike(actor, layout) {
+  layout.bikes.forEach(function(bike){if(bike.owner===actor.id)bike.owner=null;});
+  actor.bikeId=null;
 }
 export function stepOfficeActor(actor, member, layout, dt, mode) {
   var activity = sceneActivity(member), previousActivity=actor.activity;
   actor.activity=activity;
-  if(layout.bike&&layout.bike.owner===actor.id&&actor.phase==='return'&&Math.hypot(actor.x-layout.bike.x,actor.y-layout.bike.y)>54)layout.bike.owner=null;
-  if (activity === 'offline') { if(layout.bike&&layout.bike.owner===actor.id)layout.bike.owner=null;actor.breakKind=null; actor.x=actor.home.x;actor.y=actor.home.y;actor.path=[];actor.phase='desk';actor.time=0;return; }
+  var reservedBike=layout.bikes.find(function(bike){return bike.owner===actor.id;});
+  // Keep ownership until the departing actor clears their own mat, not the other bike.
+  if(reservedBike&&actor.phase==='return'&&Math.hypot(actor.x-reservedBike.x,actor.y-reservedBike.y)>54)releaseOfficeBike(actor,layout);
+  if (activity === 'offline') { releaseOfficeBike(actor,layout);actor.breakKind=null; actor.x=actor.home.x;actor.y=actor.home.y;actor.path=[];actor.phase='desk';actor.time=0;return; }
   actor.time += dt;
   var canBreak = activity === 'idle'||activity === 'done';
   var away = Math.abs(actor.x-actor.home.x)+Math.abs(actor.y-actor.home.y)>0.2;
@@ -90,15 +102,15 @@ export function stepOfficeActor(actor, member, layout, dt, mode) {
     actor.direction=Math.abs(dx)>Math.abs(dy)?(dx<0?3:2):(dy<0?1:0);
     if (d<=step+0.001) {actor.x=target.x;actor.y=target.y;actor.path.shift();}
     else {actor.x+=dx/d*step;actor.y+=dy/d*step;}
-    if (!actor.path.length) {actor.phase=actor.phase==='out'?'break':'desk';actor.wait=actor.phase==='break'?4+actor.seed%4:12+actor.seed%17;actor.direction=0;if(actor.phase==='desk'){actor.breakKind=null;if(layout.bike&&layout.bike.owner===actor.id)layout.bike.owner=null;}}
-  } else if (canBreak && mode === 'lively') {
+    if (!actor.path.length) {actor.phase=actor.phase==='out'?'break':'desk';actor.wait=actor.phase==='break'?4+actor.seed%4:12+actor.seed%17;actor.direction=0;if(actor.phase==='desk'){actor.breakKind=null;releaseOfficeBike(actor,layout);}}
+  } else if (canBreak && mode === 'lively' && dt > 0) {
     actor.wait-=dt;
     if (actor.wait<=0 && actor.phase==='desk') {
       // Stay in clear aisles. Separate resting spots avoid crowding the coffee counter.
-      var chooseBike=layout.bike&&!layout.bike.owner&&(actor.seed+actor.breakCount)%2===0;
-      var target=chooseBike?layout.bike:{x:56+(actor.seed%5)*16,y:200};
+      var bike=(actor.seed+actor.breakCount)%2===0?layout.bikes.find(function(spot){return spot.owner===null;}):null;
+      var target=bike||{x:56+(actor.seed%5)*16,y:200};
       actor.path=findOfficePath(layout,actor,target);actor.phase=actor.path.length?'out':'desk';actor.wait=15;
-      if(actor.path.length){actor.breakKind=chooseBike?'bike':'coffee';actor.breakCount++;if(chooseBike)layout.bike.owner=actor.id;}
+      if(actor.path.length){actor.breakKind=bike?'bike':'coffee';actor.breakCount++;if(bike){bike.owner=actor.id;actor.bikeId=bike.id;}}
     } else if (actor.wait<=0 && actor.phase==='break') {actor.path=findOfficePath(layout,actor,actor.home);actor.phase='return';}
   }
 }

@@ -2,7 +2,7 @@ import React from 'react';
 import {officeThemeStore} from '../office-theme.js';
 import {useOfficeSession} from '../sync/use-office-session.js';
 import {useOfficeView,useOfficeNotices} from '../office-interactions.js';
-import {taskOwnerSeat} from '../task-board.js';
+import {taskOwnerSeat,taskRevealPatch} from '../task-board.js';
 import {writeGateOf} from '../commands/protocol.js';
 import {EMPTY_FLOORS,formatClock} from '../common.js';
 import {FloorPane,CollapsibleSection} from './sections.js';
@@ -16,6 +16,17 @@ export function Page(props) {
 	const sessionId=props.officeSessionId;
   const {initialPreview,snapshot,validated,fetchError,activeFloor,refresh,source}=useOfficeSession(props);
   var view = useOfficeView(sessionId, props.active, !!activeFloor);
+	const revealTask=React.useRef(null);
+	React.useLayoutEffect(()=>{
+		const target=revealTask.current,body=view.body.current;
+		if(!target||!body||typeof body.querySelectorAll!=='function')return;
+		revealTask.current=null;
+		// Compare attributes rather than interpolating a host id into a selector.
+		const row=Array.from(body.querySelectorAll('[data-task-id]')).find(node=>node.getAttribute('data-task-id')===target);
+		if(!row)return;
+		row.scrollIntoView?.({block:'nearest',behavior:'auto'});
+		row.querySelector?.('.cid-task-row')?.focus?.({preventScroll:true});
+	},[view.value]);
 	var selectedSeatId = view.value.seatId, selectedTaskId = view.value.taskId;
 	var notices = useOfficeNotices(activeFloor, props.active && validated);
 	var recent = new Set(notices.map(function (notice) { return notice.key; }));
@@ -26,11 +37,17 @@ export function Page(props) {
 	var unassignedTask = selectedTask && !taskOwnerSeat(selectedTask, activeSeats);
 	if (unassignedTask) activeSeatId = null;
 	function selectSeat(id) { view.fold("detail", true); view.change({ seatId: id, taskId: null }); }
-	function selectTask(task) {
+	function selectTask(task,options) {
 		var owner = taskOwnerSeat(task, activeSeats);
 		view.fold("detail", true);
 		if (owner) view.fold("office", true);
-		view.change({ taskId: task.id, seatId: owner ? owner.id : null });
+		const patch={ taskId: task.id, seatId: owner ? owner.id : null };
+		if(options?.reveal){
+			view.fold('tasks',true);
+			Object.assign(patch,taskRevealPatch(activeFloor,task));
+			revealTask.current=task.id;
+		}
+		view.change(patch);
 	}
 	var writeGate = writeGateOf(source, snapshot || { state: "unavailable" }, activeFloor);
   const taskCommands=useTaskCommands({floor:activeFloor,writeGate,onRefresh:refresh,onDeleted:id=>{
