@@ -31,7 +31,7 @@ export function drawOfficeRoom(ctx, layout, scheme) {
   ctx.fillStyle=officeSceneColor('#71876b',scheme);ctx.font='7px Consolas, monospace';ctx.fillText('COFFEE / RECHARGE',28,307);
   plant(39,hg-40);plant(130,188);plant(606,hg-36);
   rect(24,hg-28,112,4,'#b4c7a6');ctx.fillStyle=officeSceneColor('#778e71',scheme);ctx.font='6px Consolas, monospace';ctx.fillText('TAKE A BREATH.',42,hg-15);
-  if(layout.bike)drawQuietOfficeBike(ctx,layout.bike.x,layout.bike.y,{scheme:scheme});
+  layout.bikes.forEach(function(bike){drawQuietOfficeBike(ctx,bike.x,bike.y,{scheme:scheme});});
   deskMode=true;
   layout.seats.forEach(function(s){
     var x=s.x,y=s.y;

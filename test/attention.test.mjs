@@ -56,11 +56,11 @@ test('execute-now assignment receipt distinguishes acceptance even without messa
   assert.equal(receiptLabel({phase:'done',kind:'assign',executeNow:false}),'宿主已确认操作');
 });
 test('attention panel observes receipts, excludes other floors, preserves unknown warning and invokes read-only selection',()=>{
-  const store=createReceiptStore();let renderer,selected;
+  const store=createReceiptStore();let renderer,selected,reveal;
   const current={...floor,tasks:[{...task,ownerName:''}]};
-  act(()=>{renderer=TestRenderer.create(React.createElement(AttentionPanel,{floor:current,controller:store,verified:false,onSelectTask:value=>{selected=value;}}));});
+  act(()=>{renderer=TestRenderer.create(React.createElement(AttentionPanel,{floor:current,controller:store,verified:false,onSelectTask:(value,options)=>{selected=value;reveal=options?.reveal;}}));});
   const text=()=>JSON.stringify(renderer.toJSON());assert.match(text(),/过期状态/);
-  act(()=>renderer.root.findAllByType('button').find(node=>node.children.includes('查看任务')).props.onClick());assert.equal(selected.id,'t');
+  act(()=>renderer.root.findAllByType('button').find(node=>node.children.includes('查看任务')).props.onClick());assert.equal(selected.id,'t');assert.equal(reveal,true);
   act(()=>store.record({}, {floorId:'other',kind:'start'},{phase:'error',error:{title:'OTHER'}}));assert.doesNotMatch(text(),/OTHER/);
   act(()=>store.record({}, {floorId:'floor',kind:'start'},{phase:'error',error:{title:'UNKNOWN',deliveryUnknown:true}}));assert.match(text(),/操作结果待核对/);
   act(()=>renderer.unmount());
@@ -114,5 +114,21 @@ test('acknowledging an unknown outcome requires confirmation and does not resend
  act(()=>btn('已核对，移出提醒').props.onClick());assert.equal(attentionItems(floor,store.list('floor')).length,1);
  act(()=>btn('取消').props.onClick());assert.equal(attentionItems(floor,store.list('floor')).length,1);
  act(()=>btn('已核对，移出提醒').props.onClick());act(()=>btn('确认已核对').props.onClick());assert.equal(renderer.toJSON(),null);
+ act(()=>renderer.unmount());
+});
+
+test('all local attention controls respond without host writes: pagination, receipts, cancel and acknowledgement',()=>{
+ const store=createReceiptStore(),tasks=Array.from({length:21},(_,i)=>({...task,id:'unassigned-'+i,ownerName:''}));
+ const id={};store.record(id,{floorId:'floor',kind:'start'},{phase:'error',error:{title:'Check delivery',deliveryUnknown:true}});
+ let renderer;act(()=>{renderer=TestRenderer.create(React.createElement(AttentionPanel,{floor:{...floor,tasks},controller:store}));});
+ const button=label=>renderer.root.findAllByType('button').find(n=>n.children.join('')===label);
+ const list=()=>renderer.root.findByProps({className:'cid-attention-list'}).children;
+ assert.equal(list().length,10);
+ act(()=>button('显示更多待处理事项').props.onClick());assert.equal(list().length,20);
+ act(()=>button('显示更多待处理事项').props.onClick());assert.equal(list().length,22);assert.equal(button('显示更多待处理事项'),undefined);
+ act(()=>button('本页操作回执（1）').props.onClick());assert.equal(renderer.root.findAllByProps({className:'cid-receipts'}).length,1);
+ act(()=>button('本页操作回执（1）').props.onClick());assert.equal(renderer.root.findAllByProps({className:'cid-receipts'}).length,0);
+ act(()=>button('已核对，移出提醒').props.onClick());act(()=>button('取消').props.onClick());assert.equal(store.list('floor')[0].acknowledged,undefined);
+ act(()=>button('已核对，移出提醒').props.onClick());act(()=>button('确认已核对').props.onClick());assert.equal(store.list('floor')[0].acknowledged,true);assert.equal(list().length,21);
  act(()=>renderer.unmount());
 });

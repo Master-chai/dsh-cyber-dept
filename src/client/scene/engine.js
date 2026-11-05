@@ -3,7 +3,7 @@
  * presentation data without replacing actor identity or resetting elapsed time.
  * The environment seam permits deterministic clock/visibility lifecycle tests.
  */
-import { createOfficeActor, stepOfficeActor, officeNeedsFrames } from './model.js';
+import { createOfficeActor, stepOfficeActor, releaseOfficeBike, officeNeedsFrames } from './model.js';
 import { drawOfficeRoom, paintOffice } from './drawing.js';
 
 export function createOfficeEngine({ canvas, layout, getCurrent, environment }) {
@@ -33,6 +33,7 @@ export function createOfficeEngine({ canvas, layout, getCurrent, environment }) 
     actors.forEach(actor => {
       const member = byId.get(actor.id);
       if (member) stepOfficeActor(actor, member, layout, animate ? dt : 0, current.mode);
+      else releaseOfficeBike(actor, layout);
     });
     paintOffice(ctx, layout, room, actors, byId, [], current.selectedId, animate, current.scheme);
     canvas.dataset.actorCount = String(actors.length);
@@ -77,6 +78,7 @@ export function createOfficeEngine({ canvas, layout, getCurrent, environment }) 
     actors, render, wake,
     dispose() {
       disposed = true;
+      actors.forEach(actor => releaseOfficeBike(actor, layout));
       env.cancelFrame(raf); raf = 0;
       if (observer) observer.disconnect();
       env.document.removeEventListener('visibilitychange', visibilityChanged);

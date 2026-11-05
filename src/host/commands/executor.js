@@ -1,4 +1,5 @@
 import { COMMAND_ACTION, COMMAND_TIMEOUT_MS, OFFICE_ERROR, TEAM_ERROR_TO_OFFICE, fail, ok } from '../../shared/contract.js';
+import { createExecutionMessage, executionText } from './execution-message.js';
 
 function getService(ctx, name) {
   try {
@@ -163,7 +164,6 @@ async function executeServiceCommand(ctx, payload, options = {}) {
         if (task.status === 'deleted') return fail(OFFICE_ERROR.taskDeleted, 'The task has been deleted.');
         if (task.revision !== args.expectedRevision) return fail(OFFICE_ERROR.staleRevision, 'The task changed; refresh before requesting execution.');
         if (task.status !== 'in_progress' || !task.ownerName) return fail(OFFICE_ERROR.invalidTransition, 'Assign an active task to a member before requesting execution.');
-        if (task.ownerName === 'lead') return fail(OFFICE_ERROR.selfMessage, 'Use the native conversation to instruct the team lead.');
         for (const id of task.blockedBy || []) {
           const blocker = await teams.getTask(lead, id);
           if (!blocker || blocker.status !== 'completed') return fail(OFFICE_ERROR.taskBlocked, 'A task dependency is not complete.');
@@ -174,12 +174,51 @@ async function executeServiceCommand(ctx, payload, options = {}) {
         }
         const signal = signalOf(options);
         signal.throwIfAborted();
-        const accepted = await teams.sendMessage(lead, {
-          target: task.ownerName,
-          content: [{ type: 'text', text: `请立即执行已指派给你的任务 ${task.id}：${task.subject}\n先读取任务的最新详情、依赖和工作范围，确认任务仍由你负责且未删除、依赖已完成，再开始执行。完成后按实际结果更新任务状态并汇报；遇到阻塞请说明原因。` }],
-          signal,
-        });
-        value = { task: taskSummary(task), target: task.ownerName, messageId: typeof accepted?.messageId === 'string' ? accepted.messageId : null };
+        if (agents.get(payload.sessionId) !== lead) return fail(OFFICE_ERROR.sessionNotLive, 'The live session changed before dispatch; refresh before requesting execution.');
+        let messageId;
+        if (task.ownerName === 'lead') {
+          // Team sendMessage rejects self-delivery. Use the same public waking
+          // inbox boundary as native lead delivery, with honest plugin provenance.
+          if (typeof teams.membership !== 'function' || typeof lead.steer !== 'function') {
+            return fail(OFFICE_ERROR.executionUnavailable, 'This host does not expose the supported Lead execution API. No execution instruction was sent.');
+          }
+          const membership = teams.membership(lead);
+          if (membership?.root !== lead || membership?.role !== 'lead') return fail(OFFICE_ERROR.leadRequired, 'Lead execution must address the exact live Team root.');
+          const message = createExecutionMessage(task, payload.commandId);
+          try {
+            lead.steer(message);
+          } catch (error) {
+            // A driver/persistence exception can occur after inbox acceptance.
+            // Do not encourage an unsafe resend when that boundary is uncertain.
+            const failed = failFromError(error, payload.action);
+            return fail(failed.error.code, failed.error.message, { ...failed.error.details, deliveryUnknown: true, messageId: message.id });
+          }
+          messageId = message.id;
+        } else {
+          if (typeof teams.sendMessage !== 'function') {
+            return fail(OFFICE_ERROR.executionUnavailable, 'This host does not expose the supported Team execution API. No execution instruction was sent.');
+          }
+          let accepted;
+          try {
+            accepted = await teams.sendMessage(lead, {
+              target: task.ownerName,
+              content: [{ type: 'text', text: executionText(task) }],
+              signal,
+            });
+          } catch (error) {
+            // Native delivery can accept the message before persistence or
+            // activity notification throws. Preserve the error, but never
+            // assume a rejection from this boundary proves non-delivery.
+            const failed = failFromError(error, payload.action);
+            return fail(failed.error.code, failed.error.message, { ...failed.error.details, deliveryUnknown: true });
+          }
+          messageId = accepted?.messageId;
+          if (typeof messageId !== 'string' || messageId.length === 0) {
+            return fail(OFFICE_ERROR.internal, 'The host did not return a message receipt. Check the target session before resending.', { deliveryUnknown: true });
+          }
+        }
+        // Inbox acceptance is not evidence that a model request has started.
+        value = { task: taskSummary(task), target: task.ownerName, messageId, execution: 'accepted' };
         break;
       }
       case COMMAND_ACTION.messageSend: {

@@ -41,8 +41,8 @@ test('start resolves the live task owner, sends one bounded instruction and neve
   assert.equal(h.calls.length,1);const [method,lead,args]=h.calls[0];assert.equal(method,'message');assert.equal(lead,h.lead);
   assert.equal(args.target,'Worker');assert.match(args.content[0].text,/task-1/);assert.match(args.content[0].text,/确认任务仍由你负责且未删除/);assert.ok(args.signal instanceof AbortSignal);
 });
-test('start rejects stale, deleted, unassigned, completed, self-owned and dependency-blocked tasks before sending',async()=>{
-  for(const [patch,code] of [[{revision:4},'stale-revision'],[{status:'deleted'},'task-deleted'],[{ownerName:null},'invalid-transition'],[{status:'completed'},'invalid-transition'],[{ownerName:'lead'},'self-message'],[{blockedBy:['task-2']},'task-blocked']]){
+test('start rejects stale, deleted, unassigned, completed and dependency-blocked tasks before sending',async()=>{
+  for(const [patch,code] of [[{revision:4},'stale-revision'],[{status:'deleted'},'task-deleted'],[{ownerName:null},'invalid-transition'],[{status:'completed'},'invalid-transition'],[{blockedBy:['task-2']},'task-blocked']]){
     const h=host({...task,...patch});const result=await executeOfficeCommand(h.ctx,payload('task.start'));
     assert.equal(result.error.code,'office/'+code);assert.equal(h.calls.length,0);
   }
@@ -88,11 +88,11 @@ test('failed assignment never dispatches an execution instruction',async()=>{
   const calls=[];const result=await executeCommandIntent({...assign,taskId:task.id,taskRevision:3},async(_id,action)=>{calls.push(action);return {ok:false,error:{code:'office/stale-revision'}};});
   assert.equal(result.phase,'unowned');assert.deepEqual(calls,['task.assign']);
 });
-test('board capability checks enforce dependents, lead targeting, readiness and preview gating',()=>{
+test('board capability checks enforce dependents, readiness and preview gating, allowing lead execution',()=>{
   assert.equal(taskActionProblem(floor,task,gate,'delete'),'');assert.equal(taskActionProblem(floor,task,gate,'start'),'');
   assert.match(taskActionProblem({...floor,tasks:[task,{id:'task-2',subject:'Depends',status:'completed',blockedBy:[task.id]}]},task,gate,'delete'),/依赖/);
   assert.match(taskActionProblem(floor,task,{enabled:false,reason:'preview'},'delete'),/preview/);
-  assert.match(taskActionProblem({...floor,seats:[{...seat,role:'lead'}]},task,gate,'start'),/负责人/);
+  assert.equal(taskActionProblem({...floor,seats:[{...seat,role:'lead'}]},task,gate,'start'),'');
 });
 function hook(controller,initial={floor,writeGate:gate},which=useTaskCommands){
   let state,renderer;function Hook(props){state=which({...props,commandController:controller});return null;}
@@ -121,11 +121,11 @@ test('successful deletion reports its exact task and refreshes once even when co
   await act(async()=>{await Promise.all([confirm(),confirm()]);});
   assert.equal(calls,1);assert.deepEqual(ids,[task.id]);assert.equal(refreshes,1);assert.equal(h.state.write.phase,'done');h.close();
 });
-test('assignment to lead may remain assign-only but cannot be forced to send a self execution instruction',async()=>{
-  let calls=0;const h=hook(createCommandController({execute:()=>{calls++;return {phase:'done'};}}),{seat:{...seat,role:'lead',id:'root'},floor,writeGate:gate},useOfficeCommands);
-  act(()=>h.state.openAssign());assert.equal(h.state.write.executeAllowed,false);
-  act(()=>h.state.patchWrite({subject:'task',description:'details',executeNow:true}));
-  await act(async()=>h.state.runWrite(h.state.write));assert.equal(calls,0);assert.ok(h.state.write.fieldError);h.close();
+test('assignment to lead defaults to execution without enabling Team self-messaging',async()=>{
+  let calls=0;const h=hook(createCommandController({execute:()=>{calls++;return {phase:'done',doneMessage:'accepted'};}}),{seat:{...seat,role:'lead',id:'root'},floor,writeGate:gate},useOfficeCommands);
+  act(()=>h.state.openAssign());assert.equal(h.state.write.executeAllowed,true);assert.equal(h.state.write.executeNow,true);assert.equal(h.state.messageAllowed,false);
+  act(()=>h.state.patchWrite({subject:'task',description:'details'}));
+  await act(async()=>h.state.runWrite(h.state.write));assert.equal(calls,1);assert.equal(h.state.write.phase,'done');h.close();
 });
 test('task board exposes separate action buttons only in task details and respects readonly',()=>{
   const actions=[];let r;act(()=>{r=TestRenderer.create(React.createElement(TaskBoard,{floor,writeGate:gate,onTaskAction:(...args)=>actions.push(args)}));});

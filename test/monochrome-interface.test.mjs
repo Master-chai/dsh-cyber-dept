@@ -33,5 +33,6 @@ test('portraits are local and use stable member identity; primary task is real s
  assert.match(source('assets.js'),/\.\/assets\/employee-portraits.webp/);
  assert.match(source('components/primitives.js'),/officeHash\(props.id \|\| props.name/);
  assert.match(source('components/employee-card.js'),/seat.task \? seat.task.subject : "暂无关联任务"/);
- assert.match(source('components/employee-card.js'),/key:"member-id"/);
+ assert.doesNotMatch(source('components/employee-card.js'),/key:"member-id"|label:"成员 ID"/);
+ assert.match(source('components/employee-card.js'),/h\(Avatar, \{ id: seat.id/);
 });

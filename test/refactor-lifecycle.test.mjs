@@ -22,8 +22,8 @@ test('replacing host cancels navigation timers and invalidates already queued ca
   const clock=timers(),calls=[];
   try {
     setRuntimeContext(host('old',calls));openRightOffice();openNativeSession('session-B');
-    const oldCallbacks=[...clock.queued.values()];assert.equal(oldCallbacks.length,2);
-    setRuntimeContext(host('new',calls));assert.equal(clock.cancelled.size,2);calls.length=0;
+    const oldCallbacks=[...clock.queued.values()];assert.equal(oldCallbacks.length,1);
+    setRuntimeContext(host('new',calls));assert.equal(clock.cancelled.size,1);calls.length=0;
     // Invoke even cancelled callbacks to model a callback already queued by the host.
     oldCallbacks.forEach(callback=>callback());assert.deepEqual(calls,[]);
   } finally {clock.restore();}

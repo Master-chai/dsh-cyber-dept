@@ -4,7 +4,7 @@ let runtimeBinding = null;
 export function setRuntimeContext(ctx) {
 	if (runtimeBinding) release(runtimeBinding);
 	if (!ctx) return function () {};
-	const binding = { ctx, active: true, timers: new Set() };
+	const binding = { ctx, active: true, timers: new Set(), navigation: 0 };
 	runtimeBinding = binding;
 	return function () { release(binding); };
 }
@@ -29,6 +29,7 @@ function schedule(binding, callback, delay) {
 export function openRightOffice(sessionId) {
 	const binding = runtimeBinding;
 	if (!binding) return;
+	binding.navigation++;
 	const runtimeCtx = binding.ctx;
 	if (sessionId) runtimeCtx.uiWorkspace.openSession(sessionId);
 	runtimeCtx.layout.selectPanel(null);
@@ -44,16 +45,59 @@ export function openRightOffice(sessionId) {
 	schedule(binding, open, 0);
 }
 
-export function openNativeSession(sessionId) {
+function service(ctx, name) {
+	return ctx[name] || (typeof ctx.get === 'function' ? ctx.get(name) : null);
+}
+
+/** Return the explicit host address when available, without inventing parentage. */
+export function nativeSessionTarget(seat) {
+	if (!seat) return null;
+	if (seat.nativeTarget) return seat.nativeTarget;
+	if (seat.parentSessionId && seat.id && seat.parentSessionId !== seat.id) {
+		return {parentSessionId:seat.parentSessionId,childSessionId:seat.id,mode:seat.mode || 'unknown'};
+	}
+	return seat.id || null;
+}
+
+function validTarget(target) {
+	if (typeof target === 'string') return target.length > 0;
+	return !!target && typeof target.parentSessionId === 'string' && !!target.parentSessionId &&
+		typeof target.childSessionId === 'string' && !!target.childSessionId &&
+		['continuable','one-shot','unknown'].includes(target.mode);
+}
+
+/**
+ * DSH uiWorkspace owns Session retention and Conversation selection. Do not
+ * selectPanel later: that used to override a newer user navigation. Report
+ * refused navigation to the caller instead of silently discarding it.
+ */
+export async function openNativeSession(target,{signal}={}) {
+	if (signal?.aborted) return {ok:false,cancelled:true};
+	const binding = runtimeBinding;
+	if (!binding || !binding.active) return {ok:false,error:'原生会话导航尚未就绪，请刷新插件后重试。'};
+	if (!validTarget(target)) return {ok:false,error:'缺少有效的原生会话地址，请刷新团队状态后重试。'};
+	const attempt = ++binding.navigation;
 	try {
-		const binding = runtimeBinding;
-		if (!binding || !sessionId) return;
-		const runtimeCtx = binding.ctx;
-		var ui = runtimeCtx.uiWorkspace || (typeof runtimeCtx.get === "function" ? runtimeCtx.get("uiWorkspace") : null);
-		var layout = runtimeCtx.layout || (typeof runtimeCtx.get === "function" ? runtimeCtx.get("layout") : null);
-		if (ui && typeof ui.openSession === "function") ui.openSession(sessionId);
-		if (layout && typeof layout.selectPanel === "function") {
-			schedule(binding, function () { try { layout.selectPanel(null); } catch (e) {} }, 140);
+		const ui = service(binding.ctx, 'uiWorkspace');
+		if (!ui || typeof ui.openSession !== 'function') throw new Error('当前 DSH 未提供 uiWorkspace.openSession');
+		const sessions = service(binding.ctx, 'sessions');
+		const origin = binding.ctx.sidebarRight?.mounted?.getSnapshot?.();
+		const panel = binding.ctx.layout?.panelInfo?.getSnapshot?.().activePanelId;
+		let resolved = typeof target === 'string' ? sessions?.subagentAddress?.(target) || target : target;
+		// The office snapshot can arrive before the native Session list. A single
+		// read-only refresh repairs that race; never retry a failed open itself.
+		const list = sessions?.list?.getSnapshot?.();
+		if (typeof resolved === 'string' && list && !list.byId?.[resolved] && typeof sessions.refresh === 'function') {
+			await sessions.refresh();
+			if (origin !== binding.ctx.sidebarRight?.mounted?.getSnapshot?.() || panel !== binding.ctx.layout?.panelInfo?.getSnapshot?.().activePanelId) return {ok:false,cancelled:true};
+			resolved = sessions.subagentAddress?.(resolved) || resolved;
 		}
-	} catch (e) {}
+		if (signal?.aborted || !binding.active || runtimeBinding !== binding || attempt !== binding.navigation) return {ok:false,cancelled:true};
+		await ui.openSession(resolved);
+		return {ok:true};
+	} catch (error) {
+		if (signal?.aborted || !binding.active || runtimeBinding !== binding || attempt !== binding.navigation) return {ok:false,cancelled:true};
+		const reason = error instanceof Error ? error.message : String(error);
+		return {ok:false,error:'无法打开原生会话：'+reason+'。请在 DSH 原生会话列表或子代理目录中核对该成员后重试。'};
+	}
 }

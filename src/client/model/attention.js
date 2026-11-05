@@ -1,4 +1,4 @@
-import {labelOf} from '../common.js';
+import {isTaskBlocked,labelOf} from '../common.js';
 
 export function ownerOf(task,floor) {
   return (floor.seats||[]).find(seat=>task.ownerId?seat.id===task.ownerId:task.ownerName&&seat.name===task.ownerName)||null;
@@ -11,7 +11,9 @@ export function taskEvidence(task,floor) {
   const issues=[];
   if(!terminal){
     if(dependencies.length)issues.push({kind:'dependency',reason:'前置任务未完成或明细不可用：'+dependencies.map(id=>tasks.find(item=>item.id===id)?.subject||id).join('、'),next:'先查看并处理前置任务，再安排当前任务。'});
-    else if(task.ready===false)issues.push({kind:'dependency',reason:'宿主报告任务尚未就绪。',next:'在原生任务详情检查依赖与限制，再刷新。'});
+    // DSH ready is pending eligibility, not an execution/health signal. Assigned
+    // in_progress tasks normally have ready=false even with no blockers.
+    else if(isTaskBlocked(task))issues.push({kind:'dependency',reason:'宿主报告任务尚未就绪。',next:'在原生任务详情检查依赖与限制，再刷新。'});
     if(!task.ownerId&&!task.ownerName)issues.push({kind:'unassigned',reason:'任务尚未指派负责人。',next:'选择成员，在“派活”中选择这项已有任务，避免重复创建。'});
     else if(!owner)issues.push({kind:'owner-missing',reason:'当前快照找不到任务负责人。',next:'刷新成员表并在原生会话核对归属。'});
     else if(owner.phase==='failed'||owner.state==='error')issues.push({kind:'error',reason:owner.error||'负责人报告错误，但未提供具体原因。',next:'查看负责人原生会话的错误信息，再决定恢复方式。'});

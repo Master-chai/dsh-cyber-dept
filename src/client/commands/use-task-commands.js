@@ -14,7 +14,6 @@ export function taskActionProblem(floor,task,gate,kind) {
   if (kind !== 'start') return '不支持的任务操作。';
   const owner = floor?.seats?.find(seat => task.ownerId ? seat.id === task.ownerId : seat.name === task.ownerName);
   if (task.status !== 'in_progress' || !owner) return '请先将未完成的任务指派给成员。';
-  if (owner.role === 'lead' || owner.id === floor.id || owner.id === floor.leadId) return '负责人请在原生会话中安排执行。';
   if (owner.phase === 'failed' || owner.phase === 'provisioning') return '成员尚未就绪。';
   if (task.blockedBy?.some(id => floor.tasks.find(item => item.id === id)?.status !== 'completed')) return '前置任务尚未完成。';
   return '';
