@@ -135,23 +135,44 @@ test('progress toggles completed/all and filters actual rows without search', ()
   assert.deepEqual(nodes(tree,n=>n.props?.['data-task-id']).map(n=>n.props['data-task-id']),['one','two']);
 });
 
-test('hover cards work for a canvas actor and keyboard focus, and Escape dismisses them', () => {
+test('mouse hover and mouse focus never show office status cards; canvas and badge clicks still select', () => {
   const h=harness(), selected=[];
   const props={floor:{seats:[{id:'a',name:'Worker',state:'tool-running',task:{subject:'Build UI'},tool:{name:'bash',summary:'npm test'}}]},onSelectSeat:id=>selected.push(id)};
   let tree=h.render(h.api.OfficeScene,props);
-  byClass(tree,'cid-desk-label').props.onFocus();
+  const badge=byClass(tree,'cid-desk-label'),canvas=nodes(tree,n=>n.type==='canvas')[0];
+  assert.equal(badge.props.onPointerEnter,undefined);
+  assert.equal(canvas.props.onPointerMove,undefined);
+  badge.props.onFocus({currentTarget:{matches:selector=>{assert.equal(selector,':focus-visible');return false;}}});
   tree=h.render(h.api.OfficeScene,props);
-  assert.ok(JSON.stringify(byClass(tree,'cid-office-tooltip')).includes('npm test'));
-  byClass(tree,'cid-office-world').props.onKeyDown({key:'Escape'});
-  tree=h.render(h.api.OfficeScene,props);
-  assert.equal(byClass(tree,'cid-office-tooltip'),undefined);
+  assert.equal(nodes(tree,n=>n.props?.role==='tooltip').length,0);
   const layout=h.api.createOfficeLayout(props.floor.seats), seat=layout.seats[0];
   const event={clientX:seat.x,clientY:seat.y-20,pointerType:'mouse',currentTarget:{getBoundingClientRect:()=>({left:0,top:0,width:layout.width,height:layout.height})}};
-  nodes(tree,n=>n.type==='canvas')[0].props.onPointerMove(event);
-  tree=h.render(h.api.OfficeScene,props);
-  assert.ok(JSON.stringify(byClass(tree,'cid-office-tooltip')).includes('Build UI'));
   nodes(tree,n=>n.type==='canvas')[0].props.onClick(event);
-  assert.deepEqual(selected,['a']);
+  byClass(tree,'cid-desk-label').props.onClick();
+  assert.deepEqual(selected,['a','a']);
+  tree=h.render(h.api.OfficeScene,props);
+  assert.equal(nodes(tree,n=>n.props?.role==='tooltip').length,0);
+});
+
+test('keyboard focus retains accessible office status and Escape or blur dismisses it',()=>{
+  const h=harness();
+  const props={floor:{seats:[{id:'a',name:'Worker',state:'tool-running',task:{subject:'Build UI'},tool:{name:'bash',summary:'npm test'}}]},selectedSeatId:'a',onSelectSeat(){}};
+  let tree=h.render(h.api.OfficeScene,props);
+  for(const dismiss of ['escape','blur']){
+    const badge=byClass(tree,'cid-desk-label');
+    assert.equal(badge.type,'button');assert.equal(badge.props['aria-pressed'],true);
+    assert.match(badge.props['aria-label'],/Worker · 执行工具 · 查看员工介绍/);
+    badge.props.onFocus({currentTarget:{matches:selector=>selector===':focus-visible'}});
+    tree=h.render(h.api.OfficeScene,props);
+    const tooltip=byClass(tree,'cid-office-tooltip');
+    assert.ok(JSON.stringify(tooltip).includes('npm test'));
+    assert.equal(byClass(tree,'cid-desk-label').props['aria-describedby'],tooltip.props.id);
+    if(dismiss==='escape')byClass(tree,'cid-office-world').props.onKeyDown({key:'Escape'});
+    else byClass(tree,'cid-desk-label').props.onBlur();
+    tree=h.render(h.api.OfficeScene,props);
+    assert.equal(nodes(tree,n=>n.props?.role==='tooltip').length,0);
+    assert.equal(byClass(tree,'cid-desk-label').props['aria-describedby'],undefined);
+  }
 });
 
 test('status hints only report real transitions, not initial data, repeat polls, deletion or other sessions', () => {

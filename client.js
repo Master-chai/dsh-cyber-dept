@@ -1964,192 +1964,10 @@ var import_react4 = __toESM(require("react"), 1);
 // src/client/office-scene.js
 var React5 = __toESM(require("react"), 1);
 
-// src/client/scene/model.js
-function officeHash(value) {
-  var hash = 2166136261;
-  for (var i = 0; i < value.length; i++) hash = Math.imul(hash ^ value.charCodeAt(i), 16777619);
-  return hash >>> 0;
-}
-function sceneActivity(member) {
-  if (member.live === false || member.state === "offline" || member.state === "inactive") return "offline";
-  if (member.state === "waiting-approval") return "approval";
-  if (member.state === "blocked" || member.state === "error") return "blocked";
-  if (member.state === "provisioning") return "starting";
-  if (member.state === "thinking") return "reading";
-  if (member.state === "streaming") return "typing";
-  if (member.state === "tool-running") {
-    return /read|search|find|list|query|browse|fetch/i.test(member.tool && member.tool.name || "") ? "reading" : "typing";
-  }
-  if (member.state === "done") return "done";
-  return member.state === "idle" ? "idle" : "offline";
-}
-function officeRestState(member) {
-  var facts = member.stateFacts || {}, activity = facts.activity || member.state;
-  var urgent = ["waiting-approval", "blocked", "error", "provisioning", "thinking", "streaming", "tool-running"];
-  if (member.officeRuntimeFacts && (member.officeRuntimeFacts.running || member.officeRuntimeFacts.waitingApproval) || member.approval || member.error || member.phase === "failed" || member.phase === "provisioning" || urgent.includes(member.state) || urgent.includes(activity)) return "none";
-  var taskFacts = member.officeTaskFacts || {};
-  var unfinished = taskFacts.unfinishedCount > 0 || member.task && member.task.status !== "completed" && member.task.status !== "deleted";
-  var offline = member.live === false || member.state === "offline" || member.state === "inactive";
-  if (taskFacts.completed === true && !unfinished) return "completed";
-  if (offline) return unfinished ? "waiting" : "offline";
-  return member.state === "idle" || member.state === "done" ? "idle" : "none";
-}
-function officeSceneSignal(member) {
-  return [member.id, member.state, member.live, member.tool && member.tool.name, officeRestState(member)].join(":");
-}
-function officeNeedsFrames(members, actors, mode, reduced) {
-  if (mode === "off" || reduced) return false;
-  return actors.some(function(actor) {
-    return actor.path.length > 0;
-  }) || members.some(function(member) {
-    var activity = sceneActivity(member);
-    return activity === "typing" || activity === "reading" || officeRestState(member) !== "none" && mode === "lively";
-  });
-}
-function createOfficeLayout(members) {
-  var rows = Math.max(2, Math.ceil(members.length / 3));
-  var layout = { width: 640, height: Math.max(560, 128 * rows + 136), seats: [], occupied: /* @__PURE__ */ new Set(), blocked: /* @__PURE__ */ new Set() };
-  members.forEach(function(member, index) {
-    layout.seats.push({ id: member.id, x: 216 + index % 3 * 160, y: 184 + Math.floor(index / 3) * 128, index });
-  });
-  layout.seats.forEach(function(seat) {
-    for (var dx = -1; dx <= 1; dx++) layout.occupied.add(Math.floor(seat.x / 16) + dx + "," + Math.floor(seat.y / 16));
-  });
-  var rowCount = Math.ceil(layout.height / 16);
-  for (var y = 0; y < rowCount; y++) for (var x = 0; x < 40; x++) {
-    var px = x * 16 + 8, py = y * 16 + 8;
-    var wall = x < 1 || x > 38 || py < 104 || py > layout.height - 20;
-    var furniture = px < 144 && (py < 176 || py > 220 && py < 304);
-    var desk = layout.seats.some(function(seat) {
-      var dx = Math.abs(px - seat.x);
-      return dx < 64 && py >= seat.y - 110 && py < seat.y - 16;
-    });
-    if (wall || furniture || desk) layout.blocked.add(x + "," + y);
-  }
-  layout.bikes = [
-    { id: "bike-1", x: 88, y: 392, owner: null },
-    { id: "bike-2", x: 88, y: 504, owner: null }
-  ];
-  layout.bikes.forEach(function(bike) {
-    var row = Math.floor(bike.y / 16);
-    for (var bx = 3; bx <= 7; bx++) for (var by = row - 1; by <= row; by++) layout.occupied.add(bx + "," + by);
-  });
-  return layout;
-}
-function findOfficePath(layout, from, to) {
-  var sx = Math.floor(from.x / 16), sy = Math.floor(from.y / 16), tx = Math.floor(to.x / 16), ty = Math.floor(to.y / 16);
-  var start = sx + "," + sy, target = tx + "," + ty;
-  if (start === target) return [{ x: to.x, y: to.y }];
-  var queue = [[sx, sy]], previous = /* @__PURE__ */ new Map([[start, null]]), found = false;
-  for (var i = 0; i < queue.length && !found; i++) {
-    var cell = queue[i];
-    [[1, 0], [0, 1], [-1, 0], [0, -1]].forEach(function(delta) {
-      var x = cell[0] + delta[0], y = cell[1] + delta[1], key = x + "," + y;
-      if (x < 0 || x >= 40 || y < 0 || y >= Math.ceil(layout.height / 16) || previous.has(key) || layout.blocked.has(key) || key !== target && layout.occupied.has(key)) return;
-      previous.set(key, cell[0] + "," + cell[1]);
-      queue.push([x, y]);
-      if (key === target) found = true;
-    });
-  }
-  if (!found) return [];
-  var path = [], current = target;
-  while (current !== start) {
-    var xy = current.split(",").map(Number);
-    path.push({ x: xy[0] * 16 + 8, y: xy[1] * 16 + 8 });
-    current = previous.get(current);
-  }
-  path.reverse();
-  var center = { x: sx * 16 + 8, y: sy * 16 + 8 };
-  if (Math.abs(from.x - center.x) + Math.abs(from.y - center.y) > 0.1) path.unshift(center);
-  return path;
-}
-function createOfficeActor(member, home) {
-  var seed = officeHash(member.id);
-  return { id: member.id, x: home.x, y: home.y, home, palette: seed % 6, direction: 0, path: [], activity: sceneActivity(member), phase: "desk", time: seed % 7, wait: 9 + seed % 15, seed, breakKind: null, bikeId: null, breakCount: 0 };
-}
-function releaseOfficeBike(actor, layout) {
-  layout.bikes.forEach(function(bike) {
-    if (bike.owner === actor.id) bike.owner = null;
-  });
-  actor.bikeId = null;
-}
-function stepOfficeActor(actor, member, layout, dt, mode) {
-  var activity = sceneActivity(member), previousActivity = actor.activity;
-  actor.activity = activity;
-  var reservedBike = layout.bikes.find(function(bike2) {
-    return bike2.owner === actor.id;
-  });
-  if (reservedBike && actor.phase === "return" && Math.hypot(actor.x - reservedBike.x, actor.y - reservedBike.y) > 54) releaseOfficeBike(actor, layout);
-  actor.time += dt;
-  var rest = officeRestState(member), canBreak = rest !== "none";
-  var away = Math.abs(actor.x - actor.home.x) + Math.abs(actor.y - actor.home.y) > 0.2;
-  if ((!canBreak || mode === "calm" || rest === "waiting" && actor.breakKind !== "phone") && (actor.phase === "break" || actor.phase === "out")) {
-    actor.path = findOfficePath(layout, actor, actor.home);
-    actor.phase = "return";
-  }
-  if (previousActivity !== activity && !away) actor.wait = 9 + actor.seed % 15;
-  if (actor.path.length) {
-    var target = actor.path[0], dx = target.x - actor.x, dy = target.y - actor.y, d = Math.hypot(dx, dy), step = Math.min(d, dt * 38);
-    actor.direction = Math.abs(dx) > Math.abs(dy) ? dx < 0 ? 3 : 2 : dy < 0 ? 1 : 0;
-    if (d <= step + 1e-3) {
-      actor.x = target.x;
-      actor.y = target.y;
-      actor.path.shift();
-    } else {
-      actor.x += dx / d * step;
-      actor.y += dy / d * step;
-    }
-    if (!actor.path.length) {
-      actor.phase = actor.phase === "out" ? "break" : "desk";
-      actor.wait = actor.phase === "break" ? 4 + actor.seed % 4 : 12 + actor.seed % 17;
-      actor.direction = 0;
-      if (actor.phase === "desk") {
-        actor.breakKind = null;
-        releaseOfficeBike(actor, layout);
-      }
-    }
-  } else if (canBreak && mode === "lively" && dt > 0) {
-    actor.wait -= dt;
-    if (actor.wait <= 0 && actor.phase === "desk") {
-      var kind = rest === "waiting" ? "phone" : ["bike", "coffee", "walk", "phone"][(actor.seed % 2 + actor.breakCount) % 4];
-      var bike = kind === "bike" ? layout.bikes.find(function(spot) {
-        return spot.owner === null;
-      }) : null;
-      if (kind === "bike" && !bike) kind = "coffee";
-      actor.breakCount++;
-      if (kind === "phone") {
-        actor.breakKind = "phone";
-        actor.phase = "break";
-        actor.wait = 7 + actor.seed % 5;
-      } else {
-        var target = bike || (kind === "walk" ? { x: [168, 312, 472, 600][actor.seed % 4], y: layout.height - 40 } : { x: 56 + actor.seed % 5 * 16, y: 200 });
-        actor.path = findOfficePath(layout, actor, target);
-        actor.phase = actor.path.length ? "out" : "desk";
-        actor.wait = 15;
-        if (actor.path.length) {
-          actor.breakKind = kind;
-          if (bike) {
-            bike.owner = actor.id;
-            actor.bikeId = bike.id;
-          }
-        }
-      }
-    } else if (actor.wait <= 0 && actor.phase === "break") {
-      if (actor.breakKind === "phone") {
-        actor.phase = "desk";
-        actor.breakKind = null;
-        actor.wait = 12 + actor.seed % 17;
-      } else {
-        actor.path = findOfficePath(layout, actor, actor.home);
-        actor.phase = "return";
-      }
-    }
-  }
-}
-
 // src/client/scene/quiet-office-people.js
 var QUIET_ACTOR_METRICS = Object.freeze({ width: 38, height: 54, palettes: 6, frames: 7, directions: 4 });
 function quietOfficeActorHit(actor, point) {
+  if (actor.phase === "break" && actor.breakKind === "bench") return point.x >= actor.x - 122 && point.x <= actor.x + 23 && point.y >= actor.y - 99 && point.y <= actor.y + 7;
   if (actor.phase === "break" && actor.breakKind === "bike") return Math.abs(point.x - actor.x) <= 38 && point.y >= actor.y - 82 && point.y <= actor.y + 14;
   if (actor.phase === "break" && actor.breakKind === "phone") return Math.abs(point.x - actor.x) <= 24 && point.y >= actor.y - 54 && point.y <= actor.y + 14;
   return Math.abs(point.x - actor.x) <= QUIET_ACTOR_METRICS.width / 2 && point.y >= actor.y - QUIET_ACTOR_METRICS.height && point.y <= actor.y + 14;
@@ -2260,7 +2078,7 @@ function drawQuietOfficePerson(ctx, x, y, options = {}) {
       p(17, -31, 2, 1, "#a0a0a0");
       p(12, -35 - frame % 2, 4, 3, skinLight);
     }
-  } else {
+  } else if (!options.hideArms) {
     p(-15, torso + 3 + stride, 5, 12, outline);
     p(-14, torso + 3 + stride, 3, 8, light);
     p(-14, torso + 11 + stride, 3, 4, skinLight);
@@ -2332,6 +2150,559 @@ function drawQuietOfficePerson(ctx, x, y, options = {}) {
   ctx.restore();
 }
 
+// src/client/scene/quiet-office-coffee.js
+var QUIET_COFFEE_TIMING = Object.freeze({ duration: 14.5, exitDuration: 1 });
+var clamp = (x) => Math.max(0, Math.min(1, x));
+var smooth = (x) => {
+  const t = clamp(x);
+  return t * t * (3 - 2 * t);
+};
+var mix = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+var REST = { x: 91, y: 250 };
+var TRAY = { x: 59, y: 232 };
+var BUTTON = { x: 65, y: 215 };
+var MOUTH = { x: 95, y: 229 };
+var HOLD = { x: 90, y: 246 };
+function quietOfficeCoffeePose(options = {}) {
+  if (options.animate === false) return { stage: "rest", hand: REST, cup: TRAY, cupInTray: true, brewing: false, fill: 0, steam: false };
+  const t = Math.max(0, Number.isFinite(options.time) ? options.time : 0);
+  if (options.exit) {
+    const from = options.exit.from, p = smooth(options.exit.time || 0), cup2 = mix(from.cup, TRAY, p);
+    return { stage: "put-back", hand: mix(from.hand, TRAY, p), cup: cup2, cupInTray: p === 1, brewing: false, fill: from.fill, steam: false };
+  }
+  if (t < 1) return { stage: "place-cup", hand: mix(REST, TRAY, smooth(t)), cup: TRAY, cupInTray: true, brewing: false, fill: 0 };
+  if (t < 1.8) return { stage: "press-button", hand: mix(TRAY, BUTTON, smooth((t - 1) / 0.8)), cup: TRAY, cupInTray: true, brewing: false, fill: 0 };
+  if (t < 5.8) return { stage: "brew", hand: mix(BUTTON, REST, smooth((t - 1.8) / 0.7)), cup: TRAY, cupInTray: true, brewing: true, fill: (t - 1.8) / 4 };
+  if (t < 6.8) {
+    const p = smooth(t - 5.8);
+    return { stage: "take-cup", hand: mix(REST, TRAY, smooth(p * 2)), cup: TRAY, cupInTray: true, brewing: false, fill: 1 };
+  }
+  if (t < 12.8) {
+    const p = (t - 6.8) % 2, q = p < 0.55 ? smooth(p / 0.55) : p < 1.1 ? 1 : 1 - smooth((p - 1.1) / 0.9), cup2 = mix(TRAY, mix(HOLD, MOUTH, q), smooth((t - 6.8) / 0.5));
+    return { stage: "sip", hand: cup2, cup: cup2, cupInTray: false, brewing: false, fill: 1 - (t - 6.8) / 9, steam: true };
+  }
+  if (t < 13.8) {
+    const cup2 = mix(HOLD, TRAY, smooth(t - 12.8));
+    return { stage: "put-back", hand: cup2, cup: cup2, cupInTray: false, brewing: false, fill: 0.3 };
+  }
+  return { stage: "release", hand: mix(TRAY, REST, smooth((t - 13.8) / 0.7)), cup: TRAY, cupInTray: true, brewing: false, fill: 0.3 };
+}
+function pen(ctx) {
+  const rect = (x, y, w, h10, c) => {
+    ctx.fillStyle = c;
+    ctx.fillRect(Math.round(x), Math.round(y), w, h10);
+  };
+  const line = (a, b, w, c) => {
+    const steps = Math.ceil(Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)));
+    for (let i = 0; i <= steps; i++) {
+      const t = steps ? i / steps : 0;
+      rect(a.x + (b.x - a.x) * t - Math.floor(w / 2), a.y + (b.y - a.y) * t - Math.floor(w / 2), w, w, c);
+    }
+  };
+  return { rect, line };
+}
+function cup(p, position, fill) {
+  p.rect(position.x - 3, position.y - 4, 7, 7, "#dedede");
+  p.rect(position.x + 4, position.y - 3, 3, 5, "#d0d0d0");
+  p.rect(position.x + 5, position.y - 2, 1, 3, "#777777");
+  p.rect(position.x - 2, position.y - 5, 5, 2, fill > 0 ? "#5c5c5c" : "#a1a1a1");
+}
+function drawQuietOfficeCoffeeStation(ctx, options = {}) {
+  const p = pen(ctx), pose = options.pose || quietOfficeCoffeePose({ animate: false });
+  p.rect(28, 238, 54, 44, "#a9a9a9");
+  p.rect(24, 230, 62, 9, "#c8c8c8");
+  p.rect(26, 230, 58, 1, "#eeeeee");
+  p.rect(30, 278, 3, 10, "#777777");
+  p.rect(76, 278, 3, 10, "#777777");
+  p.rect(38, 201, 38, 29, "#303030");
+  p.rect(40, 203, 34, 25, "#474747");
+  p.rect(43, 205, 28, 12, "#777777");
+  p.rect(45, 206, 16, 8, "#3b3b3b");
+  p.rect(47, 208, 12, 2, pose.brewing ? "#eeeeee" : "#b2b2b2");
+  p.rect(64, 211, 4, 5, pose.stage === "press-button" ? "#eeeeee" : "#a0a0a0");
+  p.rect(52, 218, 15, 5, "#313131");
+  p.rect(55, 221, 7, 3, "#a4a4a4");
+  p.rect(45, 224, 26, 10, "#363636");
+  p.rect(44, 234, 29, 3, "#8a8a8a");
+  p.rect(47, 235, 24, 1, "#535353");
+  if (pose.brewing) {
+    p.rect(57, 224, 2, 5, "#858585");
+    p.rect(60, 224, 1, 5, "#b2b2b2");
+  }
+  if (pose.cupInTray) cup(p, TRAY, pose.fill);
+}
+function drawQuietOfficeCoffeeMaker(ctx, x, y, options = {}) {
+  const pose = quietOfficeCoffeePose(options), p = pen(ctx), colors = QUIET_PERSON_PALETTES[(options.palette || 0) % 6];
+  drawQuietOfficeCoffeeStation(ctx, { pose });
+  drawQuietOfficePerson(ctx, x, y, { palette: options.palette, direction: 3, frame: 1, hideArms: true, scheme: options.scheme });
+  const shoulder = { x: x - 12, y: y - 30 }, hand = pose.hand, dx = hand.x - shoulder.x, dy = hand.y - shoulder.y, d = Math.max(1e-3, Math.hypot(dx, dy));
+  const a = (18 * 18 - 19 * 19 + d * d) / (2 * d), h10 = Math.sqrt(Math.max(0, 18 * 18 - a * a));
+  const elbow2 = { x: shoulder.x + dx / d * a - dy / d * h10, y: shoulder.y + dy / d * a + dx / d * h10 };
+  p.line(shoulder, elbow2, 5, colors[4]);
+  p.line(elbow2, hand, 4, "#c8c8c8");
+  p.rect(hand.x - 2, hand.y - 2, 5, 4, "#dedede");
+  p.line({ x: x + 12, y: y - 29 }, { x: x + 11, y: y - 14 }, 4, colors[3]);
+  p.rect(x + 9, y - 16, 4, 4, "#c8c8c8");
+  if (!pose.cupInTray) cup(p, pose.cup, pose.fill);
+  if (pose.steam && options.animate !== false) {
+    const rise = Math.floor((options.time || 0) * 3) % 3;
+    p.rect(pose.cup.x - 1, pose.cup.y - 9 - rise, 1, 3, "#b2b2b2");
+  }
+}
+
+// src/client/scene/quiet-office-bench.js
+var QUIET_BENCH_METRICS = Object.freeze({ left: -74, right: 71, top: -99, bottom: 7, width: 145, height: 106, approach: 48 });
+var QUIET_BENCH_TIMING = Object.freeze({ setup: 3.2, rep: 4.4, reps: 4, rack: 20.8, release: 21.6, rise: 22.2, duration: 24, exitDuration: 2.8 });
+var RACK = { x: -26, y: -74 };
+var TOP = { x: -21, y: -74 };
+var BOTTOM = { x: -9, y: -47 };
+var clamp2 = (n) => Math.max(0, Math.min(1, n));
+var ease = (n) => {
+  const t = clamp2(n);
+  return t * t * (3 - 2 * t);
+};
+var mix2 = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+var STAND = { hip: { x: 48, y: -15 }, shoulder: { x: 48, y: -31 }, head: { x: 48, y: -44 }, nearKnee: { x: 49, y: -8 }, farKnee: { x: 40, y: -11 } };
+var SIT = { hip: { x: 12, y: -32 }, shoulder: { x: 12, y: -58 }, head: { x: 12, y: -73 }, nearKnee: { x: 40, y: -23 }, farKnee: { x: 32, y: -28 } };
+var LIE = { hip: { x: 12, y: -32 }, shoulder: { x: -20, y: -39 }, head: { x: -43, y: -42 }, nearKnee: { x: 38, y: -23 }, farKnee: { x: 30, y: -28 } };
+function bodyBetween(a, b, t) {
+  return Object.fromEntries(Object.keys(STAND).map((key) => [key, mix2(a[key], b[key], ease(t))]));
+}
+function elbow(shoulder, hand) {
+  const dx = hand.x - shoulder.x, dy = hand.y - shoulder.y, d = Math.max(1e-3, Math.hypot(dx, dy)), upper = 18, fore = 19;
+  const along = (upper * upper - fore * fore + d * d) / (2 * d), height = Math.sqrt(Math.max(0, upper * upper - along * along));
+  return { x: shoulder.x + dx / d * along - dy / d * height, y: shoulder.y + dy / d * along + dx / d * height };
+}
+function finishPose(body, bar, grip, stage, loaded) {
+  const nearShoulder = { x: body.shoulder.x + 12, y: body.shoulder.y + 4 }, farShoulder = { x: body.shoulder.x - 12, y: body.shoulder.y - 4 };
+  const nearGrip = { x: bar.x + 14, y: bar.y + 4 }, farGrip = { x: bar.x - 14, y: bar.y - 4 };
+  const nearHand = grip === 1 ? nearGrip : mix2({ x: body.hip.x + 16, y: body.hip.y - 3 }, nearGrip, grip), farHand = grip === 1 ? farGrip : mix2({ x: body.hip.x - 10, y: body.hip.y - 9 }, farGrip, grip);
+  return {
+    ...body,
+    bar,
+    grip,
+    stage,
+    loaded,
+    nearShoulder,
+    farShoulder,
+    nearHand,
+    farHand,
+    nearGrip,
+    farGrip,
+    nearElbow: elbow(nearShoulder, nearHand),
+    farElbow: elbow(farShoulder, farHand),
+    nearFoot: { x: 48, y: 0 },
+    farFoot: { x: 39, y: -7 }
+  };
+}
+function quietOfficeBenchPose(options = {}) {
+  if (options.animate === false) return finishPose(LIE, RACK, 1, "rest", false);
+  const t = Math.max(0, Number.isFinite(options.time) ? options.time : 0), exit = options.exit;
+  if (exit) {
+    const e = Math.max(0, exit.time || 0), from = exit.from;
+    if (!from.loaded) {
+      const body = bodyBetween(from, STAND, e / 1.2);
+      return finishPose(body, RACK, from.grip * (1 - ease(e / 0.4)), "stand", false);
+    }
+    if (e < 0.8) return finishPose(from, mix2(from.bar, RACK, ease(e / 0.8)), 1, "rack", true);
+    if (e < 1.2) return finishPose(LIE, RACK, 1 - ease((e - 0.8) / 0.4), "release", false);
+    if (e < 2) return finishPose(bodyBetween(LIE, SIT, (e - 1.2) / 0.8), RACK, 0, "sit", false);
+    return finishPose(bodyBetween(SIT, STAND, (e - 2) / 0.8), RACK, 0, "stand", false);
+  }
+  if (t < 0.8) return finishPose(bodyBetween(STAND, SIT, t / 0.8), RACK, 0, "sit", false);
+  if (t < 1.8) return finishPose(bodyBetween(SIT, LIE, t - 0.8), RACK, 0, "lie", false);
+  if (t < 2.4) return finishPose(LIE, RACK, ease((t - 1.8) / 0.6), "grip", false);
+  if (t < 3.2) return finishPose(LIE, mix2(RACK, TOP, ease((t - 2.4) / 0.8)), 1, "unrack", true);
+  if (t < 20.8) {
+    const r = (t - 3.2) % 4.4;
+    const depth = r < 2 ? ease(r / 2) : r < 2.35 ? 1 : r < 3.85 ? 1 - ease((r - 2.35) / 1.5) : 0;
+    return finishPose(LIE, mix2(TOP, BOTTOM, depth), 1, r < 2 ? "lower" : r < 2.35 ? "pause" : r < 3.85 ? "press" : "lockout", true);
+  }
+  if (t < 21.6) return finishPose(LIE, mix2(TOP, RACK, ease((t - 20.8) / 0.8)), 1, "rack", true);
+  if (t < 22.2) return finishPose(LIE, RACK, 1 - ease((t - 21.6) / 0.6), "release", false);
+  if (t < 23.2) return finishPose(bodyBetween(LIE, SIT, t - 22.2), RACK, 0, "sit", false);
+  return finishPose(bodyBetween(SIT, STAND, (t - 23.2) / 0.8), RACK, 0, "stand", false);
+}
+function painter(ctx) {
+  const rect = (x, y, w, h10, c) => {
+    ctx.fillStyle = c;
+    ctx.fillRect(Math.round(x), Math.round(y), w, h10);
+  };
+  const line = (a, b, w, c) => {
+    const n = Math.ceil(Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y)));
+    for (let i = 0; i <= n; i++) {
+      const t = n ? i / n : 0;
+      rect(a.x + (b.x - a.x) * t - Math.floor(w / 2), a.y + (b.y - a.y) * t - Math.floor(w / 2), w, w, c);
+    }
+  };
+  return { rect, line };
+}
+function base(p, scheme) {
+  const { rect, line } = p;
+  rect(-74, -9, 145, 16, scheme === "dark" ? "#282828" : "#b6b6b6");
+  rect(-72, -9, 141, 1, scheme === "dark" ? "#4a4a4a" : "#dadada");
+  line({ x: -62, y: -17 }, { x: -62, y: -87 }, 4, "#4c4c4c");
+  rect(-63, -85, 1, 65, "#a8a8a8");
+  for (let y = -81; y < -24; y += 8) rect(-62, y, 1, 2, "#282828");
+  line({ x: -62, y: -14 }, { x: 20, y: -14 }, 4, "#777777");
+  rect(-70, -18, 21, 4, "#454545");
+  line({ x: -62, y: -40 }, { x: -4, y: -25 }, 3, "#7c7c7c");
+  rect(-63, -88, 5, 3, "#343434");
+  rect(-59, -88, 2, 6, "#343434");
+  line({ x: -43, y: -23 }, { x: -43, y: -6 }, 4, "#595959");
+  line({ x: 24, y: -23 }, { x: 24, y: 1 }, 4, "#595959");
+  rect(-51, -7, 20, 4, "#404040");
+  rect(16, -1, 20, 4, "#404040");
+  rect(-55, -30, 87, 8, "#303030");
+  rect(-53, -31, 83, 4, "#626262");
+  rect(-51, -31, 79, 1, "#a2a2a2");
+  rect(-28, -30, 1, 3, "#8a8a8a");
+}
+function rackFront(p) {
+  p.line({ x: 6, y: 0 }, { x: 6, y: -71 }, 4, "#555555");
+  p.rect(5, -69, 1, 65, "#b2b2b2");
+  for (let y = -64; y < -6; y += 8) p.rect(6, y, 1, 2, "#292929");
+  p.line({ x: 6, y: -24 }, { x: 38, y: -17 }, 3, "#969696");
+  p.rect(2, -72, 7, 3, "#393939");
+  p.rect(1, -74, 2, 6, "#393939");
+  p.rect(-2, 0, 20, 4, "#3b3b3b");
+}
+function barbell(p, bar) {
+  p.line({ x: bar.x - 38, y: bar.y - 10 }, { x: bar.x + 38, y: bar.y + 10 }, 3, "#343434");
+  p.line({ x: bar.x - 38, y: bar.y - 11 }, { x: bar.x + 38, y: bar.y + 9 }, 1, "#d5d5d5");
+  for (const side of [-1, 1]) {
+    const x = bar.x + side * 31, y = bar.y + side * 8;
+    p.rect(x - 5, y - 10, 9, 21, "#303030");
+    p.rect(x - 4, y - 11, 7, 23, "#444444");
+    p.rect(x - 3, y - 9, 2, 19, "#a2a2a2");
+    p.rect(x + 2, y - 8, 1, 17, "#656565");
+    p.rect(x + side * 6 - 1, y - 3, 3, 6, "#b4b4b4");
+    p.rect(x - 1, y - 2, 2, 4, "#777777");
+  }
+}
+function limb(p, start, joint, end, width, color) {
+  p.line(start, joint, width, color);
+  p.line(joint, end, width - 1, color);
+}
+function lifter(p, pose, options) {
+  const index = ((options.palette || 0) % 6 + 6) % 6, c = QUIET_PERSON_PALETTES[index], { rect, line } = p;
+  limb(p, { x: pose.hip.x - 5, y: pose.hip.y - 4 }, pose.farKnee, pose.farFoot, 6, "#626262");
+  rect(pose.farFoot.x - 4, pose.farFoot.y - 3, 12, 4, "#454545");
+  limb(p, pose.farShoulder, pose.farElbow, pose.farHand, 5, "#9b9b9b");
+  line(pose.hip, pose.shoulder, 12, "#303030");
+  line(pose.hip, pose.shoulder, 9, c[3]);
+  line({ x: pose.hip.x, y: pose.hip.y - 3 }, { x: pose.shoulder.x, y: pose.shoulder.y - 3 }, 3, c[4]);
+  limb(p, pose.hip, pose.nearKnee, pose.nearFoot, 7, "#3d3d3d");
+  line(pose.hip, pose.nearKnee, 1, "#8a8a8a");
+  rect(pose.nearFoot.x - 4, pose.nearFoot.y - 3, 13, 5, "#292929");
+  rect(pose.nearFoot.x - 2, pose.nearFoot.y - 3, 8, 1, "#bcbcbc");
+  const hx = pose.head.x, hy = pose.head.y;
+  line(pose.shoulder, { x: hx + 6, y: hy + 5 }, 5, "#bcbcbc");
+  rect(hx - 7, hy - 9, 14, 2, "#292929");
+  rect(hx - 10, hy - 7, 20, 14, "#292929");
+  rect(hx - 7, hy + 7, 14, 2, "#292929");
+  rect(hx - 9, hy - 6, 12, 12, c[0]);
+  rect(hx - 7, hy - 8, 10, 14, c[1]);
+  rect(hx + 1, hy - 6, 8, 12, "#c8c8c8");
+  rect(hx + 2, hy - 6, 6, 9, "#dedede");
+  rect(hx + 5, hy - 5, 2, 2, "#343434");
+  rect(hx + 8, hy - 2, 3, 2, "#c8c8c8");
+  rect(hx + 7, hy + 4, 2, 1, "#858585");
+  for (let y = -6; y < 5; y += 3) for (let x = -7; x < 1; x += 3) if ((x * 7 + y * 3 + index) % 3 === 0) rect(hx + x, hy + y, 2, 2, c[2]);
+  if (index === 2) rect(hx - 10, hy + 1, 3, 8, c[0]);
+  if (index === 3) rect(hx - 6, hy - 7, 7, 2, c[2]);
+  if (index === 4) rect(hx - 5, hy - 10, 3, 2, c[1]);
+  if (index === 5) rect(hx - 13, hy - 2, 5, 6, c[0]);
+  limb(p, pose.nearShoulder, pose.nearElbow, pose.nearHand, 6, "#333333");
+  limb(p, pose.nearShoulder, pose.nearElbow, pose.nearHand, 4, "#c9c9c9");
+  line(pose.nearShoulder, pose.nearElbow, 3, c[4]);
+}
+function drawQuietOfficeBench(ctx, x, y, options = {}) {
+  ctx.save();
+  ctx.translate(Math.round(x), Math.round(y));
+  const p = painter(ctx);
+  base(p, options.scheme);
+  rackFront(p);
+  if (!options.omitBar) barbell(p, RACK);
+  ctx.restore();
+}
+function drawQuietOfficeBenchPresser(ctx, x, y, options = {}) {
+  ctx.save();
+  ctx.translate(Math.round(x), Math.round(y));
+  const p = painter(ctx), pose = quietOfficeBenchPose(options);
+  if (!options.roomHasBench) base(p, options.scheme);
+  lifter(p, pose, options);
+  rackFront(p);
+  barbell(p, pose.bar);
+  if (pose.grip > 0.95) {
+    for (const hand of [pose.farHand, pose.nearHand]) {
+      p.rect(hand.x - 2, hand.y - 2, 5, 5, "#dedede");
+      p.rect(hand.x - 1, hand.y - 2, 3, 1, "#9e9e9e");
+    }
+  }
+  ctx.restore();
+}
+function drawQuietOfficeRackedBar(ctx, x, y) {
+  ctx.save();
+  ctx.translate(Math.round(x), Math.round(y));
+  barbell(painter(ctx), RACK);
+  ctx.restore();
+}
+
+// src/client/scene/model.js
+function officeHash(value) {
+  var hash = 2166136261;
+  for (var i = 0; i < value.length; i++) hash = Math.imul(hash ^ value.charCodeAt(i), 16777619);
+  return hash >>> 0;
+}
+function sceneActivity(member) {
+  if (member.live === false || member.state === "offline" || member.state === "inactive") return "offline";
+  if (member.state === "waiting-approval") return "approval";
+  if (member.state === "blocked" || member.state === "error") return "blocked";
+  if (member.state === "provisioning") return "starting";
+  if (member.state === "thinking") return "reading";
+  if (member.state === "streaming") return "typing";
+  if (member.state === "tool-running") {
+    return /read|search|find|list|query|browse|fetch/i.test(member.tool && member.tool.name || "") ? "reading" : "typing";
+  }
+  if (member.state === "done") return "done";
+  return member.state === "idle" ? "idle" : "offline";
+}
+function officeRestState(member) {
+  var facts = member.stateFacts || {}, activity = facts.activity || member.state;
+  var urgent = ["waiting-approval", "blocked", "error", "provisioning", "thinking", "streaming", "tool-running"];
+  if (member.officeRuntimeFacts && (member.officeRuntimeFacts.running || member.officeRuntimeFacts.waitingApproval) || member.approval || member.error || member.phase === "failed" || member.phase === "provisioning" || urgent.includes(member.state) || urgent.includes(activity)) return "none";
+  var taskFacts = member.officeTaskFacts || {};
+  var unfinished = taskFacts.unfinishedCount > 0 || member.task && member.task.status !== "completed" && member.task.status !== "deleted";
+  var offline = member.live === false || member.state === "offline" || member.state === "inactive";
+  if (taskFacts.completed === true && !unfinished) return "completed";
+  if (offline) return unfinished ? "waiting" : "offline";
+  return member.state === "idle" || member.state === "done" ? "idle" : "none";
+}
+function officeSceneSignal(member) {
+  return [member.id, member.state, member.live, member.tool && member.tool.name, officeRestState(member)].join(":");
+}
+function officeNeedsFrames(members, actors, mode, reduced) {
+  if (mode === "off" || reduced) return false;
+  return actors.some(function(actor) {
+    return actor.path.length > 0 || actor.phase === "break" && ["bench", "coffee"].includes(actor.breakKind);
+  }) || members.some(function(member) {
+    var activity = sceneActivity(member);
+    return activity === "typing" || activity === "reading" || officeRestState(member) !== "none" && mode === "lively";
+  });
+}
+function createOfficeLayout(members) {
+  var rows = Math.max(2, Math.ceil(members.length / 3));
+  var layout = { width: 640, height: Math.max(608, 128 * rows + 240), seats: [], occupied: /* @__PURE__ */ new Set(), blocked: /* @__PURE__ */ new Set() };
+  members.forEach(function(member, index) {
+    layout.seats.push({ id: member.id, x: 216 + index % 3 * 160, y: 184 + Math.floor(index / 3) * 128, index });
+  });
+  layout.seats.forEach(function(seat) {
+    for (var dx = -1; dx <= 1; dx++) layout.occupied.add(Math.floor(seat.x / 16) + dx + "," + Math.floor(seat.y / 16));
+  });
+  var rowCount = Math.ceil(layout.height / 16);
+  for (var y = 0; y < rowCount; y++) for (var x = 0; x < 40; x++) {
+    var px = x * 16 + 8, py = y * 16 + 8;
+    var wall = x < 1 || x > 38 || py < 104 || py > layout.height - 20;
+    var furniture = px < 144 && py < 176 || px < 88 && py > 220 && py < 304;
+    var desk = layout.seats.some(function(seat) {
+      var dx = Math.abs(px - seat.x);
+      return dx < 64 && py >= seat.y - 110 && py < seat.y - 16;
+    });
+    if (wall || furniture || desk) layout.blocked.add(x + "," + y);
+  }
+  layout.bikes = [
+    { id: "bike-1", x: 88, y: 392, owner: null },
+    { id: "bike-2", x: 88, y: 504, owner: null }
+  ];
+  layout.bikes.forEach(function(bike) {
+    var row = Math.floor(bike.y / 16);
+    for (var bx = 3; bx <= 7; bx++) for (var by = row - 1; by <= row; by++) layout.occupied.add(bx + "," + by);
+  });
+  layout.coffee = { id: "coffee-1", x: 104, y: 264, owner: null };
+  layout.benches = [
+    { id: "bench-1", x: 280, y: layout.height - 56, owner: null },
+    { id: "bench-2", x: 488, y: layout.height - 56, owner: null }
+  ];
+  layout.benches.forEach(function(bench) {
+    bench.approach = { x: bench.x + 48, y: bench.y };
+    var row = Math.floor(bench.y / 16), column = Math.floor(bench.x / 16);
+    for (var bx = column - 4; bx <= column + 1; bx++) for (var by = row - 1; by <= row; by++) layout.occupied.add(bx + "," + by);
+  });
+  return layout;
+}
+function findOfficePath(layout, from, to) {
+  var sx = Math.floor(from.x / 16), sy = Math.floor(from.y / 16), tx = Math.floor(to.x / 16), ty = Math.floor(to.y / 16);
+  var start = sx + "," + sy, target = tx + "," + ty;
+  if (start === target) return [{ x: to.x, y: to.y }];
+  var queue = [[sx, sy]], previous = /* @__PURE__ */ new Map([[start, null]]), found = false;
+  for (var i = 0; i < queue.length && !found; i++) {
+    var cell = queue[i];
+    [[1, 0], [0, 1], [-1, 0], [0, -1]].forEach(function(delta) {
+      var x = cell[0] + delta[0], y = cell[1] + delta[1], key = x + "," + y;
+      if (x < 0 || x >= 40 || y < 0 || y >= Math.ceil(layout.height / 16) || previous.has(key) || layout.blocked.has(key) || key !== target && layout.occupied.has(key)) return;
+      previous.set(key, cell[0] + "," + cell[1]);
+      queue.push([x, y]);
+      if (key === target) found = true;
+    });
+  }
+  if (!found) return [];
+  var path = [], current = target;
+  while (current !== start) {
+    var xy = current.split(",").map(Number);
+    path.push({ x: xy[0] * 16 + 8, y: xy[1] * 16 + 8 });
+    current = previous.get(current);
+  }
+  path.reverse();
+  var center = { x: sx * 16 + 8, y: sy * 16 + 8 };
+  if (Math.abs(from.x - center.x) + Math.abs(from.y - center.y) > 0.1) path.unshift(center);
+  return path;
+}
+function createOfficeActor(member, home) {
+  var seed = officeHash(member.id);
+  return { id: member.id, x: home.x, y: home.y, home, palette: seed % 6, direction: 0, path: [], activity: sceneActivity(member), phase: "desk", time: seed % 7, wait: 9 + seed % 15, seed, breakKind: null, bikeId: null, benchId: null, benchTime: 0, benchExit: null, coffeeTime: 0, coffeeExit: null, coffeeId: null, breakCount: 0 };
+}
+function releaseOfficeBike(actor, layout) {
+  layout.bikes.forEach(function(bike) {
+    if (bike.owner === actor.id) bike.owner = null;
+  });
+  actor.bikeId = null;
+}
+function releaseOfficeBench(actor, layout) {
+  layout.benches.forEach(function(bench) {
+    if (bench.owner === actor.id) bench.owner = null;
+  });
+  actor.benchId = null;
+  actor.benchExit = null;
+}
+function releaseOfficeCoffee(actor, layout) {
+  if (layout.coffee.owner === actor.id) layout.coffee.owner = null;
+  actor.coffeeId = null;
+  actor.coffeeExit = null;
+}
+function releaseOfficeEquipment(actor, layout) {
+  releaseOfficeBike(actor, layout);
+  releaseOfficeBench(actor, layout);
+  releaseOfficeCoffee(actor, layout);
+}
+function stepOfficeActor(actor, member, layout, dt, mode) {
+  var activity = sceneActivity(member), previousActivity = actor.activity;
+  actor.activity = activity;
+  var reservedBike = layout.bikes.find(function(bike2) {
+    return bike2.owner === actor.id;
+  });
+  if (reservedBike && actor.phase === "return" && Math.hypot(actor.x - reservedBike.x, actor.y - reservedBike.y) > 54) releaseOfficeBike(actor, layout);
+  var reservedBench = layout.benches.find(function(bench2) {
+    return bench2.owner === actor.id;
+  });
+  if (reservedBench && actor.phase === "return" && (Math.abs(actor.x - reservedBench.x) > 94 || Math.abs(actor.y - reservedBench.y) > 40)) releaseOfficeBench(actor, layout);
+  if (layout.coffee.owner === actor.id && actor.phase === "return" && Math.hypot(actor.x - layout.coffee.x, actor.y - layout.coffee.y) > 44) releaseOfficeCoffee(actor, layout);
+  actor.time += dt;
+  var rest = officeRestState(member), canBreak = rest !== "none";
+  var away = Math.abs(actor.x - actor.home.x) + Math.abs(actor.y - actor.home.y) > 0.2;
+  var recall = !canBreak || mode === "calm" || rest === "waiting" && actor.breakKind !== "phone";
+  if (actor.phase === "break" && actor.breakKind === "coffee" && actor.coffeeId) {
+    if (recall && !actor.coffeeExit) actor.coffeeExit = { time: 0, from: quietOfficeCoffeePose({ time: actor.coffeeTime }) };
+    if (actor.coffeeExit) actor.coffeeExit.time += dt;
+    else actor.coffeeTime += dt;
+    var coffeeFinished = actor.coffeeExit ? actor.coffeeExit.time >= QUIET_COFFEE_TIMING.exitDuration : actor.coffeeTime >= QUIET_COFFEE_TIMING.duration;
+    if (!coffeeFinished) return;
+    actor.path = findOfficePath(layout, actor, actor.home);
+    actor.phase = "return";
+  }
+  if (actor.phase === "break" && actor.breakKind === "bench") {
+    if (recall && !actor.benchExit) actor.benchExit = { time: 0, from: quietOfficeBenchPose({ time: actor.benchTime }) };
+    if (actor.benchExit) actor.benchExit.time += dt;
+    else actor.benchTime += dt;
+    var finished = actor.benchExit ? actor.benchExit.time >= (actor.benchExit.from.loaded ? QUIET_BENCH_TIMING.exitDuration : 1.2) : actor.benchTime >= QUIET_BENCH_TIMING.duration;
+    if (!finished) return;
+    actor.path = findOfficePath(layout, actor, actor.home);
+    actor.phase = "return";
+  }
+  if ((!canBreak || mode === "calm" || rest === "waiting" && actor.breakKind !== "phone") && (actor.phase === "break" || actor.phase === "out")) {
+    actor.path = findOfficePath(layout, actor, actor.home);
+    actor.phase = "return";
+  }
+  if (previousActivity !== activity && !away) actor.wait = 9 + actor.seed % 15;
+  if (actor.path.length) {
+    var target = actor.path[0], dx = target.x - actor.x, dy = target.y - actor.y, d = Math.hypot(dx, dy), step = Math.min(d, dt * 38);
+    actor.direction = Math.abs(dx) > Math.abs(dy) ? dx < 0 ? 3 : 2 : dy < 0 ? 1 : 0;
+    if (d <= step + 1e-3) {
+      actor.x = target.x;
+      actor.y = target.y;
+      actor.path.shift();
+    } else {
+      actor.x += dx / d * step;
+      actor.y += dy / d * step;
+    }
+    if (!actor.path.length) {
+      actor.phase = actor.phase === "out" ? "break" : "desk";
+      actor.wait = actor.phase === "break" ? 4 + actor.seed % 4 : 12 + actor.seed % 17;
+      actor.direction = 0;
+      if (actor.phase === "break" && actor.breakKind === "bench") {
+        actor.benchTime = 0;
+        actor.benchExit = null;
+      }
+      if (actor.phase === "break" && actor.breakKind === "coffee") {
+        actor.coffeeTime = 0;
+        actor.coffeeExit = null;
+      }
+      if (actor.phase === "desk") {
+        actor.breakKind = null;
+        releaseOfficeEquipment(actor, layout);
+      }
+    }
+  } else if (canBreak && mode === "lively" && dt > 0) {
+    actor.wait -= dt;
+    if (actor.wait <= 0 && actor.phase === "desk") {
+      var kind = rest === "waiting" ? "phone" : ["bike", "coffee", "walk", "phone", "bench"][(actor.seed % 2 + actor.breakCount) % 5];
+      var bike = kind === "bike" ? layout.bikes.find(function(spot) {
+        return spot.owner === null;
+      }) : null;
+      var bench = kind === "bench" ? layout.benches.find(function(spot) {
+        return spot.owner === null;
+      }) : null;
+      if (kind === "bike" && !bike || kind === "bench" && !bench) kind = "coffee";
+      if (kind === "coffee" && layout.coffee.owner !== null) kind = "walk";
+      actor.breakCount++;
+      if (kind === "phone") {
+        actor.breakKind = "phone";
+        actor.phase = "break";
+        actor.wait = 7 + actor.seed % 5;
+      } else {
+        var target = bike || bench && bench.approach || (kind === "walk" ? { x: [168, 312, 472, 600][actor.seed % 4], y: layout.height - 152 } : layout.coffee);
+        actor.path = findOfficePath(layout, actor, target);
+        actor.phase = actor.path.length ? "out" : "desk";
+        actor.wait = 15;
+        if (actor.path.length) {
+          actor.breakKind = kind;
+          if (bike) {
+            bike.owner = actor.id;
+            actor.bikeId = bike.id;
+          }
+          if (bench) {
+            bench.owner = actor.id;
+            actor.benchId = bench.id;
+          }
+          if (kind === "coffee") {
+            layout.coffee.owner = actor.id;
+            actor.coffeeId = layout.coffee.id;
+          }
+        }
+      }
+    } else if (actor.wait <= 0 && actor.phase === "break") {
+      if (actor.breakKind === "phone") {
+        actor.phase = "desk";
+        actor.breakKind = null;
+        actor.wait = 12 + actor.seed % 17;
+      } else {
+        actor.path = findOfficePath(layout, actor, actor.home);
+        actor.phase = "return";
+      }
+    }
+  }
+}
+
 // src/client/scene/quiet-office-bike.js
 var QUIET_BIKE_METRICS = Object.freeze({ left: -36, right: 37, top: -80, bottom: 3, width: 73, height: 83 });
 var HIP = { x: -15, y: -39 };
@@ -2348,7 +2719,7 @@ function quietOfficePedalPose(options = {}) {
   const far = { x: CRANK.x - Math.cos(phase) * RADIUS, y: CRANK.y - Math.sin(phase) * RADIUS };
   return { phase, hip: { ...HIP }, crank: { ...CRANK }, near, far, nearKnee: limbKnee(near), farKnee: limbKnee(far) };
 }
-function painter(ctx) {
+function painter2(ctx) {
   const rect = (x, y, w, h10, c) => {
     ctx.fillStyle = c;
     ctx.fillRect(Math.round(x), Math.round(y), w, h10);
@@ -2435,7 +2806,7 @@ function pedal(p, foot, near) {
 function drawQuietOfficeBike(ctx, x, y, options = {}) {
   ctx.save();
   ctx.translate(Math.round(x), Math.round(y));
-  const p = painter(ctx), pose = quietOfficePedalPose({ animate: false });
+  const p = painter2(ctx), pose = quietOfficePedalPose({ animate: false });
   bikeBase(p, options, pose);
   pedal(p, pose.far, false);
   pedal(p, pose.near, true);
@@ -2444,7 +2815,7 @@ function drawQuietOfficeBike(ctx, x, y, options = {}) {
 function drawQuietOfficeCyclist(ctx, x, y, options = {}) {
   ctx.save();
   ctx.translate(Math.round(x), Math.round(y));
-  const p = painter(ctx), pose = quietOfficePedalPose(options), index = ((options.palette || 0) % 6 + 6) % 6, c = QUIET_PERSON_PALETTES[index];
+  const p = painter2(ctx), pose = quietOfficePedalPose(options), index = ((options.palette || 0) % 6 + 6) % 6, c = QUIET_PERSON_PALETTES[index];
   leg(p, pose, false);
   pedal(p, pose.far, false);
   bikeBase(p, options, pose);
@@ -2561,19 +2932,7 @@ function drawOfficeRoom(ctx, layout, scheme) {
     line(bx, 122, 6, "#cfbca0");
   }
   rect(24, 148, 110, 4, "#dbc5a0");
-  rect(28, 238, 106, 44, "#c6ae8c");
-  rect(24, 230, 114, 18, "#dec6a0");
-  line(26, 230, 110, "#f6e4c1");
-  rect(30, 248, 3, 40, "#a28e72");
-  rect(126, 248, 3, 40, "#a28e72");
-  rect(40, 204, 28, 29, "#17242b");
-  rect(43, 207, 22, 13, "#40515a");
-  rect(48, 210, 10, 4, "#98c5ad");
-  rect(50, 224, 8, 8, "#d8cfb2");
-  rect(67, 226, 8, 5, "#d8cfb2");
-  rect(92, 217, 16, 13, "#c4bda2");
-  rect(94, 219, 12, 2, "#544739");
-  rect(108, 219, 4, 7, "#c4bda2");
+  drawQuietOfficeCoffeeStation(ctx, { scheme });
   ctx.fillStyle = officeSceneColor("#71876b", scheme);
   ctx.font = "7px Consolas, monospace";
   ctx.fillText("COFFEE / RECHARGE", 28, 307);
@@ -2586,6 +2945,9 @@ function drawOfficeRoom(ctx, layout, scheme) {
   ctx.fillText("TAKE A BREATH.", 42, hg - 15);
   layout.bikes.forEach(function(bike) {
     drawQuietOfficeBike(ctx, bike.x, bike.y, { scheme });
+  });
+  layout.benches.forEach(function(bench) {
+    drawQuietOfficeBench(ctx, bench.x, bench.y, { scheme, omitBar: true });
   });
   deskMode = true;
   layout.seats.forEach(function(s) {
@@ -2644,6 +3006,14 @@ function paintOffice(ctx, layout, room, actors, membersById, images, selectedId,
   ctx.clearRect(0, 0, layout.width, layout.height);
   ctx.drawImage(room, 0, 0);
   ctx.imageSmoothingEnabled = false;
+  layout.benches.forEach(function(bench) {
+    if (!actors.some(function(actor) {
+      return actor.benchId === bench.id && actor.phase === "break" && membersById.has(actor.id);
+    })) {
+      if (images.rackedBar) ctx.drawImage(images.rackedBar, bench.x + QUIET_BENCH_METRICS.left, bench.y + QUIET_BENCH_METRICS.top);
+      else drawQuietOfficeRackedBar(ctx, bench.x, bench.y);
+    }
+  });
   actors.slice().sort(function(a, b) {
     return a.y - b.y;
   }).forEach(function(actor) {
@@ -2676,13 +3046,17 @@ function paintOffice(ctx, layout, room, actors, membersById, images, selectedId,
     if (phone) frame = 5 + Math.floor(t / 0.8) % 2;
     var pose = officeActorPose(actor);
     var cycling = actor.phase === "break" && actor.breakKind === "bike";
-    if (cycling) drawQuietOfficeCyclist(ctx, x, y, { palette: actor.palette, time: t, animate, scheme });
+    var benching = actor.phase === "break" && actor.breakKind === "bench";
+    var makingCoffee = actor.phase === "break" && actor.breakKind === "coffee" && actor.coffeeId;
+    if (makingCoffee) drawQuietOfficeCoffeeMaker(ctx, x, y, { palette: actor.palette, time: actor.coffeeTime, exit: actor.coffeeExit, animate, scheme });
+    else if (benching) drawQuietOfficeBenchPresser(ctx, x - 48, y, { palette: actor.palette, time: actor.benchTime, exit: actor.benchExit, animate, scheme, roomHasBench: true });
+    else if (cycling) drawQuietOfficeCyclist(ctx, x, y, { palette: actor.palette, time: t, animate, scheme });
     else {
       drawQuietOfficePerson(ctx, x, y, { palette: actor.palette, direction: pose.direction, frame, seated: pose.seated, phone, scheme });
       if (pose.seated) drawQuietOfficeChair(ctx, x, y, { scheme });
     }
     ctx.globalAlpha = 1;
-    if (!cycling && (activity === "approval" || activity === "blocked" || completed || activity === "starting" || activity === "reading")) {
+    if (!cycling && !benching && (activity === "approval" || activity === "blocked" || completed || activity === "starting" || activity === "reading")) {
       var bx = x + 9, by = y - 48 + (animate && activity === "reading" ? Math.round(Math.sin(t * 1.6)) : 0);
       ctx.fillStyle = "#13242e";
       ctx.fillRect(bx - 1, by - 10, 23, 15);
@@ -2695,7 +3069,7 @@ function paintOffice(ctx, layout, room, actors, membersById, images, selectedId,
       ctx.fillText(activity === "approval" ? "?" : activity === "blocked" ? "!" : completed ? "OK" : activity === "starting" ? "+" : "···", bx + 10, by + 1);
       ctx.textAlign = "left";
     }
-    if (actor.phase === "break" && actor.breakKind === "coffee") {
+    if (actor.phase === "break" && actor.breakKind === "coffee" && !makingCoffee) {
       var sip = animate && Math.floor(t / 1.8) % 2 === 0 ? 8 : 0;
       ctx.fillStyle = "#d7d7d7";
       ctx.fillRect(x + 9, y - 21 - sip, 6, 7);
@@ -2721,6 +3095,11 @@ function createOfficeEngine({ canvas, layout, getCurrent, environment }) {
   room.height = layout.height;
   let roomScheme = getCurrent().scheme;
   drawOfficeRoom(room.getContext("2d"), layout, roomScheme);
+  const rackedBar = env.document.createElement("canvas");
+  rackedBar.width = QUIET_BENCH_METRICS.width;
+  rackedBar.height = QUIET_BENCH_METRICS.height;
+  drawQuietOfficeRackedBar(rackedBar.getContext("2d"), -QUIET_BENCH_METRICS.left, -QUIET_BENCH_METRICS.top);
+  const images = { rackedBar };
   const actors = getCurrent().members.map((member, index) => createOfficeActor(member, layout.seats[index]));
   let disposed = false, raf = 0, last = 0, visible = true, lastPaint = 0;
   function render(now) {
@@ -2733,9 +3112,14 @@ function createOfficeEngine({ canvas, layout, getCurrent, environment }) {
     actors.forEach((actor) => {
       const member = byId.get(actor.id);
       if (member) stepOfficeActor(actor, member, layout, animate ? dt : 0, current.mode);
-      else releaseOfficeBike(actor, layout);
+      else {
+        releaseOfficeEquipment(actor, layout);
+        actor.path = [];
+        actor.phase = "desk";
+        actor.breakKind = null;
+      }
     });
-    paintOffice(ctx, layout, room, actors, byId, [], current.selectedId, animate, current.scheme);
+    paintOffice(ctx, layout, room, actors, byId, images, current.selectedId, animate, current.scheme);
     canvas.dataset.actorCount = String(actors.length);
     canvas.dataset.motion = current.active && officeNeedsFrames(current.members, actors, current.mode, current.reduced) ? "running" : "paused";
   }
@@ -2787,7 +3171,7 @@ function createOfficeEngine({ canvas, layout, getCurrent, environment }) {
     wake,
     dispose() {
       disposed = true;
-      actors.forEach((actor) => releaseOfficeBike(actor, layout));
+      actors.forEach((actor) => releaseOfficeEquipment(actor, layout));
       env.cancelFrame(raf);
       raf = 0;
       if (observer) observer.disconnect();
@@ -2890,9 +3274,7 @@ function OfficeScene(props) {
       }, onKeyDown: function(event) {
         if (event.key === "Escape") showHover(null);
       }, style: { width: "100%", aspectRatio: layout.width + " / " + layout.height } },
-      h2("canvas", { ref: canvasRef, width: layout.width, height: layout.height, "aria-label": "像素办公室。点击卡座上的工牌选择成员。", role: "img", onPointerMove: function(event) {
-        if (event.pointerType !== "touch") showHover(hit(event));
-      }, onClick: function(event) {
+      h2("canvas", { ref: canvasRef, width: layout.width, height: layout.height, "aria-label": "像素办公室。点击卡座上的工牌选择成员。", role: "img", onClick: function(event) {
         var target = hit(event);
         if (target) {
           showHover(null);
@@ -2901,10 +3283,8 @@ function OfficeScene(props) {
       } }),
       layout.seats.map(function(seat, i) {
         var member = members[i], completed = officeRestState(member) === "completed", status = completed ? member.state === "offline" || member.live === false ? "任务完成 · 离线休息" : "任务完成 · 休息" : member.live === false ? "休眠" : labelOf(member.state);
-        return h2("button", { type: "button", key: member.id, className: "cid-desk-label", "aria-pressed": member.id === props.selectedSeatId, "aria-describedby": hovered && hovered.id === member.id ? tooltipId : void 0, "aria-label": member.name + " · " + status + " · 查看员工介绍", "data-state": member.state, "data-recent": props.recent && props.recent.has("seat:" + member.id) ? "1" : "0", style: { left: seat.x / layout.width * 100 + "%", top: (seat.y - 105) / layout.height * 100 + "%", height: 18 / layout.height * 100 + "%", "--seat-tone": officeTone(completed ? "done" : member.state, props.scheme) }, onPointerEnter: function(event) {
-          if (event.pointerType !== "touch") showHover(seat);
-        }, onFocus: function() {
-          showHover(seat);
+        return h2("button", { type: "button", key: member.id, className: "cid-desk-label", "aria-pressed": member.id === props.selectedSeatId, "aria-describedby": hovered && hovered.id === member.id ? tooltipId : void 0, "aria-label": member.name + " · " + status + " · 查看员工介绍", "data-state": member.state, "data-recent": props.recent && props.recent.has("seat:" + member.id) ? "1" : "0", style: { left: seat.x / layout.width * 100 + "%", top: (seat.y - 105) / layout.height * 100 + "%", height: 18 / layout.height * 100 + "%", "--seat-tone": officeTone(completed ? "done" : member.state, props.scheme) }, onFocus: function(event) {
+          if (event.currentTarget.matches(":focus-visible")) showHover(seat);
         }, onBlur: function() {
           showHover(null);
         }, onClick: function() {
@@ -2912,12 +3292,12 @@ function OfficeScene(props) {
           props.onSelectSeat(member.id);
         } }, h2("span", null, h2("i", null), h2("b", null, member.name)), h2("small", null, status));
       }),
-      summary ? h2("div", { id: tooltipId, role: "tooltip", className: "cid-office-tooltip", style: { left: "clamp(8px, " + hoverState[0].x / layout.width * 100 + "%, calc(100% - 228px))", top: "clamp(8px, " + (hoverState[0].y - 60) / layout.height * 100 + "%, calc(100% - 128px))" } }, h2("strong", null, summary.name + " · " + summary.state), h2("span", null, summary.task), hoverState[0].phase === "break" ? h2("small", null, "模拟活动 · " + ({ bike: "骑行", coffee: "咖啡", walk: "散步", phone: "工位看手机" }[hoverState[0].breakKind] || "休息")) : null, summary.tool ? h2("small", null, "工具：" + summary.tool) : null) : null
+      summary ? h2("div", { id: tooltipId, role: "tooltip", className: "cid-office-tooltip", style: { left: "clamp(8px, " + hoverState[0].x / layout.width * 100 + "%, calc(100% - 228px))", top: "clamp(8px, " + (hoverState[0].y - 60) / layout.height * 100 + "%, calc(100% - 128px))" } }, h2("strong", null, summary.name + " · " + summary.state), h2("span", null, summary.task), hoverState[0].phase === "break" ? h2("small", null, "模拟活动 · " + ({ bench: "卧推", bike: "骑行", coffee: "咖啡", walk: "散步", phone: "工位看手机" }[hoverState[0].breakKind] || "休息")) : null, summary.tool ? h2("small", null, "工具：" + summary.tool) : null) : null
     )),
     h2(
       "div",
       { className: "cid-office-footer" },
-      h2("span", null, reducedState[0] ? "已跟随系统减少动态效果" : "咖啡 · 骑行 · 散步 · 工位看手机均为模拟活动；离线不代表任务完成"),
+      h2("span", null, reducedState[0] ? "已跟随系统减少动态效果" : "咖啡 · 骑行 · 卧推 · 散步 · 工位看手机均为模拟活动；离线不代表任务完成"),
       h2("span", null, "点击卡座工牌查看任务"),
       all.length > 12 ? h2("div", { className: "cid-scene-pages" }, h2("button", { type: "button", disabled: page === 0, onClick: function() {
         pageState[1](page - 1);
@@ -3656,13 +4036,7 @@ function DetailPane(props) {
     ),
     h6(
       "section",
-      { className: "cid-write", "aria-label": "沟通", "data-cyber-write-enabled": canWrite ? "1" : "0" },
-      h6(
-        "div",
-        { className: "cid-write-head" },
-        h6("h4", { className: "cid-write-title" }, "沟通"),
-        h6("span", { className: "cid-chip", "data-tone": canWrite ? "ok" : "muted", "data-cyber-write-state": canWrite ? "enabled" : "disabled" }, canWrite ? "可沟通" : "只读")
-      ),
+      { className: "cid-write", "aria-label": "沟通", "data-cyber-write-enabled": canWrite ? "1" : "0", "data-cyber-write-state": canWrite ? "enabled" : "disabled" },
       h6(
         "div",
         { className: "cid-write-grid" },
@@ -3944,6 +4318,12 @@ var office_scene_default = `/* Design system: inherited DSH surfaces and typogra
 .cid-write-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 @container cid-communication (min-width:360px){.cid-write-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 .cid-write-grid>.cid-write-btn[data-cyber-write=approval]{grid-column:1 / -1}
+/* Halve only the four employee actions, keeping independent accessible hit areas. */
+.cid-write-grid{--cid-employee-action-height:16px;--cid-employee-action-target:24px;row-gap:max(6px,calc(var(--cid-employee-action-target) - var(--cid-employee-action-height)));padding-block:calc((var(--cid-employee-action-target) - var(--cid-employee-action-height)) / 2)}
+.cid-write-grid>.cid-write-btn:not([data-cyber-write=approval]){position:relative;min-height:0;height:var(--cid-employee-action-height);line-height:1;padding:0 8px;white-space:nowrap}
+.cid-write-grid>.cid-write-btn:not([data-cyber-write=approval])::after{content:"";position:absolute;top:50%;left:-1px;right:-1px;height:var(--cid-employee-action-target);transform:translateY(-50%)}
+@container cid-panel (max-width:700px){.cid-write-grid{--cid-employee-action-height:22px}}
+@media(any-pointer:coarse){.cid-write-grid{--cid-employee-action-target:44px}}
 /* The current-session office lives entirely inside the host's push sidebar. */
 .cid-current .cid-header{padding:12px;flex-wrap:nowrap;gap:8px}
 .cid-current .cid-title{font-size:15px}.cid-current .cid-subtitle{font-size:10px}

@@ -16,6 +16,12 @@
 .cid-write-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 @container cid-communication (min-width:360px){.cid-write-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 .cid-write-grid>.cid-write-btn[data-cyber-write=approval]{grid-column:1 / -1}
+/* Halve only the four employee actions, keeping independent accessible hit areas. */
+.cid-write-grid{--cid-employee-action-height:16px;--cid-employee-action-target:24px;row-gap:max(6px,calc(var(--cid-employee-action-target) - var(--cid-employee-action-height)));padding-block:calc((var(--cid-employee-action-target) - var(--cid-employee-action-height)) / 2)}
+.cid-write-grid>.cid-write-btn:not([data-cyber-write=approval]){position:relative;min-height:0;height:var(--cid-employee-action-height);line-height:1;padding:0 8px;white-space:nowrap}
+.cid-write-grid>.cid-write-btn:not([data-cyber-write=approval])::after{content:"";position:absolute;top:50%;left:-1px;right:-1px;height:var(--cid-employee-action-target);transform:translateY(-50%)}
+@container cid-panel (max-width:700px){.cid-write-grid{--cid-employee-action-height:22px}}
+@media(any-pointer:coarse){.cid-write-grid{--cid-employee-action-target:44px}}
 /* The current-session office lives entirely inside the host's push sidebar. */
 .cid-current .cid-header{padding:12px;flex-wrap:nowrap;gap:8px}
 .cid-current .cid-title{font-size:15px}.cid-current .cid-subtitle{font-size:10px}

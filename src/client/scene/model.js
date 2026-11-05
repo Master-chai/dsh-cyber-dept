@@ -1,3 +1,6 @@
+import { quietOfficeCoffeePose, QUIET_COFFEE_TIMING } from './quiet-office-coffee.js';
+import { quietOfficeBenchPose, QUIET_BENCH_TIMING } from './quiet-office-bench.js';
+
 /** Pure scene model. DSH state is input; movement never writes task state. */
 export function officeHash(value) {
   var hash = 2166136261;
@@ -37,14 +40,14 @@ export function officeSceneSignal(member) {
 }
 export function officeNeedsFrames(members, actors, mode, reduced) {
   if (mode === 'off' || reduced) return false;
-  return actors.some(function(actor){return actor.path.length > 0;}) || members.some(function(member){
+  return actors.some(function(actor){return actor.path.length > 0 || (actor.phase==='break'&&['bench','coffee'].includes(actor.breakKind));}) || members.some(function(member){
     var activity=sceneActivity(member);
     return activity==='typing'||activity==='reading'||(officeRestState(member)!=='none'&&mode==='lively');
   });
 }
 export function createOfficeLayout(members) {
   var rows = Math.max(2, Math.ceil(members.length / 3));
-  var layout = { width: 640, height: Math.max(560, 128 * rows + 136), seats: [], occupied: new Set(), blocked: new Set() };
+  var layout = { width: 640, height: Math.max(608, 128 * rows + 240), seats: [], occupied: new Set(), blocked: new Set() };
   members.forEach(function (member, index) {
     layout.seats.push({ id: member.id, x: 216 + (index % 3) * 160, y: 184 + Math.floor(index / 3) * 128, index: index });
   });
@@ -53,7 +56,7 @@ export function createOfficeLayout(members) {
   for (var y = 0; y < rowCount; y++) for (var x = 0; x < 40; x++) {
     var px = x * 16 + 8, py = y * 16 + 8;
     var wall = x < 1 || x > 38 || py < 104 || py > layout.height - 20;
-    var furniture = px < 144 && (py < 176 || (py > 220 && py < 304));
+    var furniture = (px < 144 && py < 176) || (px < 88 && py > 220 && py < 304);
     var desk = layout.seats.some(function (seat) {
       var dx=Math.abs(px-seat.x);
       return dx < 64 && py >= seat.y-110 && py < seat.y-16;
@@ -68,6 +71,16 @@ export function createOfficeLayout(members) {
   layout.bikes.forEach(function(bike){
     var row = Math.floor(bike.y / 16);
     for(var bx=3;bx<=7;bx++)for(var by=row-1;by<=row;by++)layout.occupied.add(bx+','+by);
+  });
+  layout.coffee={id:'coffee-1',x:104,y:264,owner:null};
+  layout.benches = [
+    { id:'bench-1', x:280, y:layout.height-56, owner:null },
+    { id:'bench-2', x:488, y:layout.height-56, owner:null },
+  ];
+  layout.benches.forEach(function(bench){
+    bench.approach={x:bench.x+48,y:bench.y};
+    var row=Math.floor(bench.y/16),column=Math.floor(bench.x/16);
+    for(var bx=column-4;bx<=column+1;bx++)for(var by=row-1;by<=row;by++)layout.occupied.add(bx+','+by);
   });
   return layout;
 }
@@ -95,11 +108,22 @@ export function findOfficePath(layout, from, to) {
 }
 export function createOfficeActor(member, home) {
   var seed = officeHash(member.id);
-  return { id:member.id, x:home.x, y:home.y, home:home, palette:seed%6, direction:0, path:[], activity:sceneActivity(member), phase:'desk', time:seed%7, wait:9+seed%15, seed:seed,breakKind:null,bikeId:null,breakCount:0 };
+  return { id:member.id, x:home.x, y:home.y, home:home, palette:seed%6, direction:0, path:[], activity:sceneActivity(member), phase:'desk', time:seed%7, wait:9+seed%15, seed:seed,breakKind:null,bikeId:null,benchId:null,benchTime:0,benchExit:null,coffeeTime:0,coffeeExit:null,coffeeId:null,breakCount:0 };
 }
 export function releaseOfficeBike(actor, layout) {
   layout.bikes.forEach(function(bike){if(bike.owner===actor.id)bike.owner=null;});
   actor.bikeId=null;
+}
+export function releaseOfficeBench(actor, layout) {
+  layout.benches.forEach(function(bench){if(bench.owner===actor.id)bench.owner=null;});
+  actor.benchId=null;actor.benchExit=null;
+}
+export function releaseOfficeCoffee(actor, layout) {
+  if(layout.coffee.owner===actor.id)layout.coffee.owner=null;
+  actor.coffeeId=null;actor.coffeeExit=null;
+}
+export function releaseOfficeEquipment(actor, layout) {
+  releaseOfficeBike(actor,layout);releaseOfficeBench(actor,layout);releaseOfficeCoffee(actor,layout);
 }
 export function stepOfficeActor(actor, member, layout, dt, mode) {
   var activity = sceneActivity(member), previousActivity=actor.activity;
@@ -108,9 +132,28 @@ export function stepOfficeActor(actor, member, layout, dt, mode) {
   // Keep ownership until the departing actor clears their own mat, not the other bike.
   if(reservedBike&&actor.phase==='return'&&Math.hypot(actor.x-reservedBike.x,actor.y-reservedBike.y)>54)releaseOfficeBike(actor,layout);
 
+  var reservedBench=layout.benches.find(function(bench){return bench.owner===actor.id;});
+  if(reservedBench&&actor.phase==='return'&&(Math.abs(actor.x-reservedBench.x)>94||Math.abs(actor.y-reservedBench.y)>40))releaseOfficeBench(actor,layout);
+
+  if(layout.coffee.owner===actor.id&&actor.phase==='return'&&Math.hypot(actor.x-layout.coffee.x,actor.y-layout.coffee.y)>44)releaseOfficeCoffee(actor,layout);
   actor.time += dt;
   var rest=officeRestState(member),canBreak=rest!=='none';
   var away = Math.abs(actor.x-actor.home.x)+Math.abs(actor.y-actor.home.y)>0.2;
+  var recall=!canBreak||mode==='calm'||(rest==='waiting'&&actor.breakKind!=='phone');
+  if(actor.phase==='break'&&actor.breakKind==='coffee'&&actor.coffeeId){
+    if(recall&&!actor.coffeeExit)actor.coffeeExit={time:0,from:quietOfficeCoffeePose({time:actor.coffeeTime})};
+    if(actor.coffeeExit)actor.coffeeExit.time+=dt;else actor.coffeeTime+=dt;
+    var coffeeFinished=actor.coffeeExit?actor.coffeeExit.time>=QUIET_COFFEE_TIMING.exitDuration:actor.coffeeTime>=QUIET_COFFEE_TIMING.duration;
+    if(!coffeeFinished)return;
+    actor.path=findOfficePath(layout,actor,actor.home);actor.phase='return';
+  }
+  if(actor.phase==='break'&&actor.breakKind==='bench'){
+    if(recall&&!actor.benchExit)actor.benchExit={time:0,from:quietOfficeBenchPose({time:actor.benchTime})};
+    if(actor.benchExit)actor.benchExit.time+=dt;else actor.benchTime+=dt;
+    var finished=actor.benchExit?actor.benchExit.time>=(actor.benchExit.from.loaded?QUIET_BENCH_TIMING.exitDuration:1.2):actor.benchTime>=QUIET_BENCH_TIMING.duration;
+    if(!finished)return;
+    actor.path=findOfficePath(layout,actor,actor.home);actor.phase='return';
+  }
   if ((!canBreak || mode === 'calm' || (rest==='waiting'&&actor.breakKind!=='phone')) && (actor.phase === 'break' || actor.phase === 'out')) {
     actor.path=findOfficePath(layout,actor,actor.home);actor.phase='return';
   }
@@ -120,22 +163,24 @@ export function stepOfficeActor(actor, member, layout, dt, mode) {
     actor.direction=Math.abs(dx)>Math.abs(dy)?(dx<0?3:2):(dy<0?1:0);
     if (d<=step+0.001) {actor.x=target.x;actor.y=target.y;actor.path.shift();}
     else {actor.x+=dx/d*step;actor.y+=dy/d*step;}
-    if (!actor.path.length) {actor.phase=actor.phase==='out'?'break':'desk';actor.wait=actor.phase==='break'?4+actor.seed%4:12+actor.seed%17;actor.direction=0;if(actor.phase==='desk'){actor.breakKind=null;releaseOfficeBike(actor,layout);}}
+    if (!actor.path.length) {actor.phase=actor.phase==='out'?'break':'desk';actor.wait=actor.phase==='break'?4+actor.seed%4:12+actor.seed%17;actor.direction=0;if(actor.phase==='break'&&actor.breakKind==='bench'){actor.benchTime=0;actor.benchExit=null;}if(actor.phase==='break'&&actor.breakKind==='coffee'){actor.coffeeTime=0;actor.coffeeExit=null;}if(actor.phase==='desk'){actor.breakKind=null;releaseOfficeEquipment(actor,layout);}}
   } else if (canBreak && mode === 'lively' && dt > 0) {
     actor.wait-=dt;
     if (actor.wait<=0 && actor.phase==='desk') {
-      // Stable, staggered rotation gives every resting actor all four activities.
+      // Stable, staggered rotation gives every resting actor all five activities.
       // Unfinished offline work permits only desk standby, never a completion badge.
-      var kind=rest==='waiting'?'phone':['bike','coffee','walk','phone'][(actor.seed%2+actor.breakCount)%4];
+      var kind=rest==='waiting'?'phone':['bike','coffee','walk','phone','bench'][(actor.seed%2+actor.breakCount)%5];
       var bike=kind==='bike'?layout.bikes.find(function(spot){return spot.owner===null;}):null;
-      if(kind==='bike'&&!bike)kind='coffee';
+      var bench=kind==='bench'?layout.benches.find(function(spot){return spot.owner===null;}):null;
+      if((kind==='bike'&&!bike)||(kind==='bench'&&!bench))kind='coffee';
+      if(kind==='coffee'&&layout.coffee.owner!==null)kind='walk';
       actor.breakCount++;
       if(kind==='phone'){
         actor.breakKind='phone';actor.phase='break';actor.wait=7+actor.seed%5;
       }else{
-        var target=bike||(kind==='walk'?{x:[168,312,472,600][actor.seed%4],y:layout.height-40}:{x:56+(actor.seed%5)*16,y:200});
+        var target=bike||(bench&&bench.approach)||(kind==='walk'?{x:[168,312,472,600][actor.seed%4],y:layout.height-152}:layout.coffee);
         actor.path=findOfficePath(layout,actor,target);actor.phase=actor.path.length?'out':'desk';actor.wait=15;
-        if(actor.path.length){actor.breakKind=kind;if(bike){bike.owner=actor.id;actor.bikeId=bike.id;}}
+        if(actor.path.length){actor.breakKind=kind;if(bike){bike.owner=actor.id;actor.bikeId=bike.id;}if(bench){bench.owner=actor.id;actor.benchId=bench.id;}if(kind==='coffee'){layout.coffee.owner=actor.id;actor.coffeeId=layout.coffee.id;}}
       }
     } else if (actor.wait<=0 && actor.phase==='break') {
       if(actor.breakKind==='phone'){actor.phase='desk';actor.breakKind=null;actor.wait=12+actor.seed%17;}

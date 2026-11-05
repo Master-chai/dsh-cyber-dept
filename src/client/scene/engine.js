@@ -3,8 +3,9 @@
  * presentation data without replacing actor identity or resetting elapsed time.
  * The environment seam permits deterministic clock/visibility lifecycle tests.
  */
-import { createOfficeActor, stepOfficeActor, releaseOfficeBike, officeNeedsFrames } from './model.js';
+import { createOfficeActor, stepOfficeActor, releaseOfficeEquipment, officeNeedsFrames } from './model.js';
 import { drawOfficeRoom, paintOffice } from './drawing.js';
+import { drawQuietOfficeRackedBar, QUIET_BENCH_METRICS } from './quiet-office-bench.js';
 
 export function createOfficeEngine({ canvas, layout, getCurrent, environment }) {
   const env = environment || {
@@ -20,6 +21,11 @@ export function createOfficeEngine({ canvas, layout, getCurrent, environment }) 
   room.height = layout.height;
   let roomScheme = getCurrent().scheme;
   drawOfficeRoom(room.getContext('2d'), layout, roomScheme);
+  // One small shared raster keeps empty equipment out of the per-frame pixel loop.
+  const rackedBar=env.document.createElement('canvas');
+  rackedBar.width=QUIET_BENCH_METRICS.width;rackedBar.height=QUIET_BENCH_METRICS.height;
+  drawQuietOfficeRackedBar(rackedBar.getContext('2d'),-QUIET_BENCH_METRICS.left,-QUIET_BENCH_METRICS.top);
+  const images={rackedBar};
   const actors = getCurrent().members.map((member, index) => createOfficeActor(member, layout.seats[index]));
   let disposed = false, raf = 0, last = 0, visible = true, lastPaint = 0;
 
@@ -33,9 +39,12 @@ export function createOfficeEngine({ canvas, layout, getCurrent, environment }) 
     actors.forEach(actor => {
       const member = byId.get(actor.id);
       if (member) stepOfficeActor(actor, member, layout, animate ? dt : 0, current.mode);
-      else releaseOfficeBike(actor, layout);
+      else {
+        releaseOfficeEquipment(actor, layout);
+        actor.path=[];actor.phase='desk';actor.breakKind=null;
+      }
     });
-    paintOffice(ctx, layout, room, actors, byId, [], current.selectedId, animate, current.scheme);
+    paintOffice(ctx, layout, room, actors, byId, images, current.selectedId, animate, current.scheme);
     canvas.dataset.actorCount = String(actors.length);
     canvas.dataset.motion = current.active && officeNeedsFrames(current.members, actors, current.mode, current.reduced) ? 'running' : 'paused';
   }
@@ -78,7 +87,7 @@ export function createOfficeEngine({ canvas, layout, getCurrent, environment }) 
     actors, render, wake,
     dispose() {
       disposed = true;
-      actors.forEach(actor => releaseOfficeBike(actor, layout));
+      actors.forEach(actor => releaseOfficeEquipment(actor, layout));
       env.cancelFrame(raf); raf = 0;
       if (observer) observer.disconnect();
       env.document.removeEventListener('visibilitychange', visibilityChanged);

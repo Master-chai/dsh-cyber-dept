@@ -25,12 +25,42 @@ test('employee communication switches directly between two and four columns usin
   assert.match(css,/\.cid-write-grid>\.cid-write-btn\[data-cyber-write=approval\]\{grid-column:1 \/ -1\}/);
 });
 
-test('the new action container retains the original panel-dependent button height',()=>{
+test('only the four employee actions are visually half-height, with separate non-overlapping hit areas',()=>{
   assert.match(css,/\.cid-root\{[^}]*container-name:cid-panel/);
+  // The approval entry keeps its original sizing; specific action rules override these defaults.
   assert.match(css,/@container cid-panel \(max-width:700px\)\{\.cid-write-btn\{min-height:44px\}\}/);
   assert.match(css,/\.cid-write-btn\{min-height:32px;border-radius:5px\}/);
-  const responsive=css.slice(css.indexOf('/* Four communication actions'),css.indexOf('/* The current-session'));
-  assert.doesNotMatch(responsive,/font-size|padding|background|color:|border-radius|order:|outline:/);
+  const compact=css.slice(css.indexOf('/* Halve only'),css.indexOf('/* The current-session'));
+  assert.match(compact,/--cid-employee-action-height:16px;--cid-employee-action-target:24px/);
+  assert.match(compact,/@container cid-panel \(max-width:700px\)\{\.cid-write-grid\{--cid-employee-action-height:22px\}\}/);
+  assert.match(compact,/\.cid-write-grid>\.cid-write-btn:not\(\[data-cyber-write=approval\]\)\{position:relative;min-height:0;height:var\(--cid-employee-action-height\);line-height:1;padding:0 8px;white-space:nowrap\}/);
+  assert.match(compact,/::after\{content:"";position:absolute;top:50%;left:-1px;right:-1px;height:var\(--cid-employee-action-target\);transform:translateY\(-50%\)\}/);
+  assert.match(compact,/@media\(any-pointer:coarse\)\{\.cid-write-grid\{--cid-employee-action-target:44px\}\}/);
+  assert.match(compact,/row-gap:max\(6px,calc\(var\(--cid-employee-action-target\) - var\(--cid-employee-action-height\)\)\)/);
+  assert.match(compact,/padding-block:calc\(\(var\(--cid-employee-action-target\) - var\(--cid-employee-action-height\)\) \/ 2\)/);
+  for(const [old,height] of [[32,16],[44,22]])for(const target of [24,44]){
+    assert.equal(height,old/2);
+    assert.ok(height+Math.max(6,target-height)>=target,'adjacent rows have separate hit areas');
+  }
+  assert.doesNotMatch(compact,/\.cid-modal|font-size|background|color:|border-radius|order:|outline:/);
+});
+
+test('employee controls omit the visible heading and availability badge while preserving accessible name and read-only reason',()=>{
+  let renderer;
+  act(()=>{renderer=TestRenderer.create(React.createElement(DetailPane,props()));});
+  try{
+    for(const enabled of [true,false]){
+      act(()=>renderer.update(React.createElement(DetailPane,props(seat,enabled))));
+      const section=renderer.root.findByProps({className:'cid-write'});
+      assert.equal(section.props['aria-label'],'沟通');
+      assert.equal(section.props['data-cyber-write-state'],enabled?'enabled':'disabled');
+      assert.equal(section.props['data-cyber-write-enabled'],enabled?'1':'0');
+      assert.equal(section.findAllByType('h4').length,0);
+      assert.equal(section.findAllByProps({className:'cid-chip'}).length,0);
+      assert.equal(section.findAllByProps({className:'cid-write-head'}).length,0);
+      assert.equal(section.findAllByProps({'data-cyber-write-blocked':'快照只读'}).length,enabled?0:1);
+    }
+  }finally{act(()=>renderer.unmount());}
 });
 
 test('all four communication actions keep order, labels and their confirmation dialogs after repeated open/cancel',()=>{

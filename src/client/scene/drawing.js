@@ -2,6 +2,8 @@
 import { officeRestState } from './model.js';
 import { officeSceneColor } from '../office-theme.js';
 import { drawQuietOfficePerson, drawQuietOfficeChair } from './quiet-office-people.js';
+import { drawQuietOfficeCoffeeStation, drawQuietOfficeCoffeeMaker } from './quiet-office-coffee.js';
+import { drawQuietOfficeBench, drawQuietOfficeBenchPresser, drawQuietOfficeRackedBar, QUIET_BENCH_METRICS } from './quiet-office-bench.js';
 import { drawQuietOfficeBike, drawQuietOfficeCyclist } from './quiet-office-bike.js';
 
 export function officeTone(state, scheme) {
@@ -26,13 +28,12 @@ export function drawOfficeRoom(ctx, layout, scheme) {
   rect(156,96,466,hg-116,'#d4dfcb');for(var yy=99;yy<hg-22;yy+=4)line(159,yy,460,'#cedbc5');
   rect(24,102,110,62,'#c5cdbb');rect(24,102,110,5,'#d5bb91');rect(26,108,106,43,'#c1ad8d');
   for(var b=0;b<12;b++){var bx=30+b*8;rect(bx,113+(b%3)*2,6,31-(b%3)*2,['#7e9b8d','#c5a67a','#7894a9','#a97e6f'][b%4]);line(bx,122,6,'#cfbca0');}rect(24,148,110,4,'#dbc5a0');
-  rect(28,238,106,44,'#c6ae8c');rect(24,230,114,18,'#dec6a0');line(26,230,110,'#f6e4c1');rect(30,248,3,40,'#a28e72');rect(126,248,3,40,'#a28e72');
-  rect(40,204,28,29,'#17242b');rect(43,207,22,13,'#40515a');rect(48,210,10,4,'#98c5ad');rect(50,224,8,8,'#d8cfb2');rect(67,226,8,5,'#d8cfb2');
-  rect(92,217,16,13,'#c4bda2');rect(94,219,12,2,'#544739');rect(108,219,4,7,'#c4bda2');
+  drawQuietOfficeCoffeeStation(ctx,{scheme:scheme});
   ctx.fillStyle=officeSceneColor('#71876b',scheme);ctx.font='7px Consolas, monospace';ctx.fillText('COFFEE / RECHARGE',28,307);
   plant(39,hg-40);plant(130,188);plant(606,hg-36);
   rect(24,hg-28,112,4,'#b4c7a6');ctx.fillStyle=officeSceneColor('#778e71',scheme);ctx.font='6px Consolas, monospace';ctx.fillText('TAKE A BREATH.',42,hg-15);
   layout.bikes.forEach(function(bike){drawQuietOfficeBike(ctx,bike.x,bike.y,{scheme:scheme});});
+  layout.benches.forEach(function(bench){drawQuietOfficeBench(ctx,bench.x,bench.y,{scheme:scheme,omitBar:true});});
   deskMode=true;
   layout.seats.forEach(function(s){
     var x=s.x,y=s.y;
@@ -72,6 +73,7 @@ export function officeActorPose(actor) {
 }
 export function paintOffice(ctx, layout, room, actors, membersById, images, selectedId, animate, scheme) {
   ctx.clearRect(0,0,layout.width,layout.height);ctx.drawImage(room,0,0);ctx.imageSmoothingEnabled=false;
+  layout.benches.forEach(function(bench){if(!actors.some(function(actor){return actor.benchId===bench.id&&actor.phase==='break'&&membersById.has(actor.id);})){if(images.rackedBar)ctx.drawImage(images.rackedBar,bench.x+QUIET_BENCH_METRICS.left,bench.y+QUIET_BENCH_METRICS.top);else drawQuietOfficeRackedBar(ctx,bench.x,bench.y);}});
   actors.slice().sort(function(a,b){return a.y-b.y;}).forEach(function(actor){
     var member=membersById.get(actor.id);if(!member)return;
     var x=Math.round(actor.x),y=Math.round(actor.y),home=actor.home,activity=actor.activity,walking=actor.path.length>0;
@@ -86,15 +88,19 @@ export function paintOffice(ctx, layout, room, actors, membersById, images, sele
     if(phone)frame=5+Math.floor(t/.8)%2;
     var pose=officeActorPose(actor);
     var cycling=actor.phase==='break'&&actor.breakKind==='bike';
-    if(cycling)drawQuietOfficeCyclist(ctx,x,y,{palette:actor.palette,time:t,animate:animate,scheme:scheme});
+    var benching=actor.phase==='break'&&actor.breakKind==='bench';
+    var makingCoffee=actor.phase==='break'&&actor.breakKind==='coffee'&&actor.coffeeId;
+    if(makingCoffee)drawQuietOfficeCoffeeMaker(ctx,x,y,{palette:actor.palette,time:actor.coffeeTime,exit:actor.coffeeExit,animate:animate,scheme:scheme});
+    else if(benching)drawQuietOfficeBenchPresser(ctx,x-48,y,{palette:actor.palette,time:actor.benchTime,exit:actor.benchExit,animate:animate,scheme:scheme,roomHasBench:true});
+    else if(cycling)drawQuietOfficeCyclist(ctx,x,y,{palette:actor.palette,time:t,animate:animate,scheme:scheme});
     else {drawQuietOfficePerson(ctx,x,y,{palette:actor.palette,direction:pose.direction,frame:frame,seated:pose.seated,phone:phone,scheme:scheme});
       if(pose.seated)drawQuietOfficeChair(ctx,x,y,{scheme:scheme});}
     ctx.globalAlpha=1;
-    if(!cycling&&(activity==='approval'||activity==='blocked'||completed||activity==='starting'||activity==='reading')){
+    if(!cycling&&!benching&&(activity==='approval'||activity==='blocked'||completed||activity==='starting'||activity==='reading')){
       var bx=x+9,by=y-48+(animate&&activity==='reading'?Math.round(Math.sin(t*1.6)):0);
       ctx.fillStyle='#13242e';ctx.fillRect(bx-1,by-10,23,15);ctx.fillStyle=color;ctx.fillRect(bx,by-9,21,13);ctx.fillRect(bx+3,by+4,4,3);
       ctx.fillStyle=scheme==='dark'?'#192c32':'#ffffff';ctx.font='bold 9px Consolas,monospace';ctx.textAlign='center';ctx.fillText(activity==='approval'?'?':activity==='blocked'?'!':completed?'OK':activity==='starting'?'+':'···',bx+10,by+1);ctx.textAlign='left';
     }
-    if(actor.phase==='break'&&actor.breakKind==='coffee') {var sip=animate&&Math.floor(t/1.8)%2===0?8:0;ctx.fillStyle='#d7d7d7';ctx.fillRect(x+9,y-21-sip,6,7);ctx.fillRect(x+15,y-20-sip,2,4);ctx.fillStyle='#666666';ctx.fillRect(x+10,y-22-sip,4,1);}
+    if(actor.phase==='break'&&actor.breakKind==='coffee'&&!makingCoffee) {var sip=animate&&Math.floor(t/1.8)%2===0?8:0;ctx.fillStyle='#d7d7d7';ctx.fillRect(x+9,y-21-sip,6,7);ctx.fillRect(x+15,y-20-sip,2,4);ctx.fillStyle='#666666';ctx.fillRect(x+10,y-22-sip,4,1);}
   });
 }

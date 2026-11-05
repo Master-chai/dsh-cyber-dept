@@ -15,12 +15,12 @@ function recordingContext(trace = []) {
 // Monochrome backdrop snapshots after adding two independently occupied bicycles.
 // Geometry and animation invariants are covered independently below.
 const roomTraces = [
-  ['light', 2, 'aebe5da3657fb12a492e8581e565fca436e80dc3714f23f5413f5ad900bc27ee'],
-  ['light', 9, 'aebe5da3657fb12a492e8581e565fca436e80dc3714f23f5413f5ad900bc27ee'],
-  ['light', 12, '4e95a01b7ea4908b1484b77fcc7b38b9c4b38e5bbd9cc57535a962c24d0a5148'],
-  ['dark', 2, 'bb50c3a1a0c61d159af183c992a01e1e0ece86bb8065eeabfe7ec070b423746d'],
-  ['dark', 9, 'bb50c3a1a0c61d159af183c992a01e1e0ece86bb8065eeabfe7ec070b423746d'],
-  ['dark', 12, '855092f494f3e32287aa6a7901a34a89ddb1dd4adc3f43aa918c1a69386b81ff'],
+  ['light', 2, 'adbf168450e5d17130473bd9bfe9b5d7185216f78c0c83c30616eca903fd8216'],
+  ['light', 9, '6de006e72af40fa0a07c356dbdceddd08cf90e54329a4ed3228c8af2076f0b32'],
+  ['light', 12, 'f3fe6fd69d610585b11d53948cbaf29d2030cf19cb44b5f84d7998303a7254a8'],
+  ['dark', 2, '2aff3ad8759184966fc28653a4089ce069c99fee82c49943d9c2b8c196dd7eaf'],
+  ['dark', 9, '09f75082e189a7523698375f18ac08827ae1c1aafe11f1155341b7eefb846ff5'],
+  ['dark', 12, 'ebd4807d1df5a3ce2629b89ceb532d5964703b59ed605947047d2ef987198471'],
 ];
 for (const [scheme, count, expected] of roomTraces) test(`room backdrop includes bicycle lounge: ${scheme}, ${count} seats`, () => {
   const trace = [];
