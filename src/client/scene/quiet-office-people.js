@@ -5,6 +5,7 @@
 export const QUIET_ACTOR_METRICS = Object.freeze({ width: 38, height: 54, palettes: 6, frames: 7, directions: 4 });
 /** Hit region includes the head and chair feet; it follows the actor while walking. */
 export function quietOfficeActorHit(actor, point) {
+  if(actor.phase==='break'&&actor.breakKind==='bench')return point.x>=actor.x-122&&point.x<=actor.x+23&&point.y>=actor.y-99&&point.y<=actor.y+7;
   if(actor.phase==='break'&&actor.breakKind==='bike')return Math.abs(point.x-actor.x)<=38&&point.y>=actor.y-82&&point.y<=actor.y+14;
   if(actor.phase==='break'&&actor.breakKind==='phone')return Math.abs(point.x-actor.x)<=24&&point.y>=actor.y-54&&point.y<=actor.y+14;
   return Math.abs(point.x-actor.x)<=QUIET_ACTOR_METRICS.width/2 && point.y>=actor.y-QUIET_ACTOR_METRICS.height && point.y<=actor.y+14;
@@ -72,7 +73,7 @@ export function drawQuietOfficePerson(ctx,x,y,options={}) {
       p(15,-41,5,2,'#8e8e8e');p(15,-37,4,1,'#b2b2b2');
       p(17,-31,2,1,'#a0a0a0');p(12,-35-(frame%2),4,3,skinLight);
     }
-  }else{
+  }else if(!options.hideArms){
     p(-15,torso+3+stride,5,12,outline);p(-14,torso+3+stride,3,8,light);p(-14,torso+11+stride,3,4,skinLight);
     p(11,torso+3-stride,5,12,outline);p(12,torso+3-stride,3,8,shirt);p(12,torso+11-stride,3,4,skin);
   }

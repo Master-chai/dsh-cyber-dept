@@ -64,7 +64,7 @@ test('completed and unknown offline actors cycle coffee, cycling, walking and de
    if(actor.breakKind==='phone'&&actor.phase==='break'){assert.equal(actor.x,actor.home.x);assert.equal(actor.y,actor.home.y);}
    assert.ok(!layout.blocked.has(Math.floor(actor.x/16)+','+Math.floor(actor.y/16)));
   }
-  assert.deepEqual([...activities].sort(),['bike','coffee','phone','walk']);assert.equal(JSON.stringify(member),before);
+  assert.deepEqual([...activities].sort(),['bench','bike','coffee','phone','walk']);assert.equal(JSON.stringify(member),before);
  }
 });
 

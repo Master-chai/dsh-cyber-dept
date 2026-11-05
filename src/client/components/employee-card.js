@@ -77,13 +77,7 @@ export function DetailPane(props) {
     h("dl", { className: "cid-facts cid-employee-facts" }, facts)),
 		h(
 			"section",
-			{ className: "cid-write", "aria-label": "沟通", "data-cyber-write-enabled": canWrite ? "1" : "0" },
-			h(
-				"div",
-				{ className: "cid-write-head" },
-				h("h4", { className: "cid-write-title" }, "沟通"),
-				h("span", { className: "cid-chip", "data-tone": canWrite ? "ok" : "muted", "data-cyber-write-state": canWrite ? "enabled" : "disabled" }, canWrite ? "可沟通" : "只读")
-			),
+			{ className: "cid-write", "aria-label": "沟通", "data-cyber-write-enabled": canWrite ? "1" : "0", "data-cyber-write-state": canWrite ? "enabled" : "disabled" },
 			h(
 				"div",
 				{ className: "cid-write-grid" },
