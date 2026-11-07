@@ -4433,7 +4433,7 @@ var office_scene_default = `/* Design system: inherited DSH surfaces and typogra
 .cid-employee-brand{display:none}
 .cid-employee-profile{display:flex;flex-direction:column;gap:12px;margin:0 0 18px}
 .cid-employee-identity{width:100%;gap:16px;align-items:center}
-.cid-employee-identity .cid-avatar[data-large=true]{width:96px;height:96px;border-radius:7px;flex:none}
+.cid-employee-identity .cid-avatar[data-large=true]{width:48px;height:48px;border-radius:7px;flex:none}
 .cid-employee-identity .cid-detail-title{font-size:20px;line-height:1.3;letter-spacing:-.3px}
 .cid-employee-identity .cid-detail-sub{font-size:12px}
 .cid-employee-status{align-items:flex-start;flex-direction:column;gap:8px}
@@ -4447,8 +4447,8 @@ var office_scene_default = `/* Design system: inherited DSH surfaces and typogra
 .cid-employee-facts .cid-fact{display:grid;grid-template-columns:72px minmax(0,1fr);gap:12px;padding:9px 0;border-bottom:1px solid var(--cid-border-subtle)}
 .cid-employee-facts .cid-fact dt{font-size:11px}.cid-employee-facts .cid-fact dd{font-size:12px;margin:0;overflow-wrap:anywhere}
 .cid-desk-label small{color:var(--cid-text-secondary)}
-@container (max-width:340px){.cid-employee-identity{flex-direction:row;gap:12px}.cid-employee-identity .cid-detail-title{font-size:17px}.cid-employee-identity .cid-avatar[data-large=true]{width:80px;height:80px}}
-@container (min-width:560px){.cid-employee-identity .cid-avatar[data-large=true]{width:112px;height:112px}.cid-employee-identity .cid-detail-title{font-size:24px}}
+@container (max-width:340px){.cid-employee-identity{flex-direction:row;gap:12px}.cid-employee-identity .cid-detail-title{font-size:17px}.cid-employee-identity .cid-avatar[data-large=true]{width:40px;height:40px}}
+@container (min-width:560px){.cid-employee-identity .cid-avatar[data-large=true]{width:56px;height:56px}.cid-employee-identity .cid-detail-title{font-size:24px}}
 /* Attention and task explanations use the same host surfaces. */
 .cid-attention{margin:12px 0;border:1px solid var(--cid-border-subtle);border-radius:6px;padding:12px;background:var(--cid-surface-panel);color:var(--cid-text-primary)}
 .cid-attention h3,.cid-attention h4{font-size:13px;margin:0 0 10px}
